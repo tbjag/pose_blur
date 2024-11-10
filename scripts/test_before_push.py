@@ -20,9 +20,6 @@ if __name__ == '__main__':
         run('bash ./datasets/download_cyclegan_dataset.sh mini_pix2pix')
 
     # pretrained cyclegan model
-    if not os.path.exists('./checkpoints/horse2zebra_pretrained/latest_net_G.pth'):
-        run('bash ./scripts/download_cyclegan_model.sh horse2zebra')
-    run('python test.py --model test --dataroot ./datasets/mini --name horse2zebra_pretrained --no_dropout --num_test 1 --no_dropout')
 
     # pretrained pix2pix model
     if not os.path.exists('./checkpoints/facades_label2photo_pretrained/latest_net_G.pth'):
@@ -30,10 +27,6 @@ if __name__ == '__main__':
     if not os.path.exists('./datasets/facades'):
         run('bash ./datasets/download_pix2pix_dataset.sh facades')
     run('python test.py --dataroot ./datasets/facades/ --direction BtoA --model pix2pix --name facades_label2photo_pretrained --num_test 1')
-
-    # cyclegan train/test
-    run('python train.py --model cycle_gan --name temp_cyclegan --dataroot ./datasets/mini --n_epochs 1 --n_epochs_decay 0 --save_latest_freq 10  --print_freq 1 --display_id -1')
-    run('python test.py --model test --name temp_cyclegan --dataroot ./datasets/mini --num_test 1 --model_suffix "_A" --no_dropout')
 
     # pix2pix train/test
     run('python train.py --model pix2pix --name temp_pix2pix --dataroot ./datasets/mini_pix2pix --n_epochs 1 --n_epochs_decay 5 --save_latest_freq 10 --display_id -1')
