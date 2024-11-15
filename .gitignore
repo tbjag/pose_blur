@@ -1,6 +1,10 @@
 # Ignore the data directory that contains all the mnist files
 data/mnist_all
 
+data/mnist_blur_pairs
+data/MNIST/
+
+checkpoints/
 # Ignore any other temporary or cache files
 *.pyc
 __pycache__/
