@@ -9,6 +9,14 @@ from typing import List, Tuple
 import shutil
 from sklearn.model_selection import train_test_split
 
+
+'''
+TODO
+download coco dataset
+unzip into data folder
+find annotation folder - feed into main string
+'''
+
 class PersonImageProcessor:
     def __init__(self, standard_size: Tuple[int, int] = (512, 512), max_kernel_size: int = 21, sigma: float = 5.0):
         self.standard_size = standard_size
@@ -52,20 +60,19 @@ class PersonImageProcessor:
                 if kernel_size >= 3:
                     padding = kernel_size // 2
                     region = region.unsqueeze(0)
-                    region = torch.nn.functional.avg_pool2d(region, 3, stride=1, padding=1)
+                    region = torch.nn.functional.avg_pool2d(region, 3, stride=1, padding=padding)
                     blurred[:, y:y+h, x:x+w] = region.squeeze(0)
         return blurred
 
 def prepare_coco_blur_pairs(data_dir: str = './data/coco', 
                           paired_dir: str = './data/coco_blur_pairs',
-                          subset: str = 'val2017',
+                          ann_file: str = 'val2017',
                           num_images: int = 1000):
     """Create paired dataset of original and person-blurred COCO images"""
     
     os.makedirs(paired_dir, exist_ok=True)
     
     # Initialize COCO dataset
-    ann_file = f'{data_dir}/annotations/instances_{subset}.json'
     coco = COCO(ann_file)
     
     # Initialize processor
