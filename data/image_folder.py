@@ -19,6 +19,33 @@ IMG_EXTENSIONS = [
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
+def make_coco_dataset(gtruth_dir, blurr_dir):
+    gtruth = []
+    blurred = []
+    bbox = []
+    assert os.path.isdir(dir), '%s is not a valid directory' % dir
+
+    for root, _, fnames in sorted(os.walk(gtruth_dir)): # TODO, need a separate dir for the images we process!
+        for fname in fnames:
+            if is_image_file(fname):
+                path = os.path.join(root, fname)
+                gtruth.append(path)
+
+    for root, _, fnames in sorted(os.walk(blurr_dir)):
+        for fname in fnames:
+            if is_image_file(fname):
+                path = os.path.join(root, fname)
+                blurred.append(path)
+
+    for root, _, fnames in sorted(os.walk(blurr_dir)):
+        for fname in fnames:
+            if fname.endswith('.json'):
+                path = os.path.join(root, fname)
+                bbox.append(path)
+
+    return gtruth, blurred, bbox
+
+
 
 def make_dataset(dir, max_dataset_size=float("inf")):
     images = []

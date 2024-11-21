@@ -63,10 +63,11 @@ class PersonImageProcessor:
                         continue
         return blurred
 
-def prepare_coco_blur_pairs(data_dir: str = './data/coco', 
-                          paired_dir: str = './data/coco_blur_pairs',
-                          ann_file: str = 'val2017',
-                          num_images: int = 1000):
+def prepare_coco_blur_pairs(data_dir: str, 
+                          paired_dir: str,
+                          new_dir: str,
+                          ann_file: str,
+                          num_images: int):
     """Create paired dataset of original and person-blurred COCO images"""
     
     os.makedirs(paired_dir, exist_ok=True)
@@ -100,8 +101,11 @@ def prepare_coco_blur_pairs(data_dir: str = './data/coco',
             
             # Convert tensors to PIL images
             blurred_image = T.ToPILImage()(blurred_tensor)
+            og_image = T.ToPILImage()(original_tensor)
             
             # Save paired image
+            og_image.save(os.path.join(new_dir, f'{img_id}.png'))
+
             blurred_image.save(os.path.join(paired_dir, f'{img_id}.png'))
             blurred_image_bbox_path = os.path.join(paired_dir, f'{img_id}.json')
             with open(blurred_image_bbox_path, 'w') as file:
@@ -115,9 +119,11 @@ if __name__ == '__main__':
     data_dir = '/media/Data_2/raw_coco/val2017'
     paired_dir = '/media/Data_2/blurred_coco/'
     ann_file = '/media/Data_2/raw_coco/annotations'
+    new_og_dir = '/media/Data_2/og_coco/'
     
     # Create paired dataset
     prepare_coco_blur_pairs(data_dir=data_dir, 
                           paired_dir=paired_dir,
                           ann_file='/media/Data_2/raw_coco/annotations/instances_val2017.json',
+                          new_dir=new_og_dir,
                           num_images=1000)
