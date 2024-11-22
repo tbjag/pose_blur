@@ -1,7 +1,7 @@
 import os
 import torch
 import torchvision.transforms as T
-from PIL import Image
+from PIL import Image, ImageFilter
 from pycocotools.coco import COCO
 from typing import List, Tuple
 import json
@@ -38,34 +38,20 @@ class PersonImageProcessor:
         ]
         return scaled_bbox
 
-    def create_blurred_image(self, tensor: torch.Tensor, bboxes: List[List[int]]) -> torch.Tensor:
-        blurred = tensor.clone()
+    def create_blurred_image(self, image: Image.Image, bboxes: List[List[int]]) -> Image.Image:
+        blurred = image.copy()
+
         for bbox in bboxes:
             x, y, w, h = bbox
-            region = blurred[:, y:y+h, x:x+w]
+            region = blurred.crop((x, y, x + w, y + h))
             if w >= 3 and h >= 3:  # Only blur regions that are large enough
-                # Adjust kernel size dynamically based on region size
-                kernel_size = min(self.max_kernel_size, max(3, min(w, h) // 3 * 2 + 1))
-                padding = kernel_size // 2
+                blurred_region = region.filter(ImageFilter.GaussianBlur(radius=5))
+                blurred.paste(blurred_region, (x, y))
                 
-                if kernel_size >= 3:
-                    try:
-                        region = region.unsqueeze(0)
-                        region = torch.nn.functional.avg_pool2d(
-                            region, 
-                            kernel_size=kernel_size, 
-                            stride=1, 
-                            padding=padding
-                        )
-                        blurred[:, y:y+h, x:x+w] = region.squeeze(0)
-                    except Exception as e:
-                        print(f"Blurring error for bbox {bbox}: {e}")
-                        continue
         return blurred
 
 def prepare_coco_blur_pairs(data_dir: str, 
                           paired_dir: str,
-                          new_dir: str,
                           ann_file: str,
                           num_images: int):
     """Create paired dataset of original and person-blurred COCO images"""
@@ -83,47 +69,45 @@ def prepare_coco_blur_pairs(data_dir: str,
     img_ids = coco.getImgIds(catIds=cat_ids)[:num_images]
     
     for img_id in tqdm(img_ids, desc=f'Processing {len(img_ids)} images...'):
-        try:
-            # Load image info and annotations
-            img_info = coco.loadImgs([img_id])[0]
-            ann_ids = coco.getAnnIds(imgIds=img_id, catIds=cat_ids, iscrowd=None)
-            anns = coco.loadAnns(ann_ids)
-            
-            # Load and preprocess image
-            original_tensor = processor.load_and_preprocess_image(img_info['file_name'])
-            
-            # Scale bounding boxes
-            original_size = (img_info['width'], img_info['height'])
-            scaled_bboxes = [processor.scale_bbox(ann['bbox'], original_size) for ann in anns]
-            
-            # Create blurred version
-            blurred_tensor = processor.create_blurred_image(original_tensor, scaled_bboxes)
-            
-            # Convert tensors to PIL images
-            blurred_image = T.ToPILImage()(blurred_tensor)
-            og_image = T.ToPILImage()(original_tensor)
-            
-            # Save paired image
-            og_image.save(os.path.join(new_dir, f'{img_id}.png'))
+        # Load image info and annotations
+        img_info = coco.loadImgs([img_id])[0]
+        ann_ids = coco.getAnnIds(imgIds=img_id, catIds=cat_ids, iscrowd=None)
+        anns = coco.loadAnns(ann_ids)
+        
+        # Load and preprocess image
+        original_tensor = processor.load_and_preprocess_image(img_info['file_name'])
+        
+        # Scale bounding boxes
+        original_size = (img_info['width'], img_info['height'])
+        scaled_bboxes = [processor.scale_bbox(ann['bbox'], original_size) for ann in anns]
+        
+        # Convert tensor to PIL image
+        original_image = T.ToPILImage()(original_tensor)
+        blurred_image = processor.create_blurred_image(original_image, scaled_bboxes)
+        
+        # Create paired image
+        paired_image = Image.new('RGB', (original_image.width * 2, original_image.height))
+        paired_image.paste(original_image, (0, 0))
 
-            blurred_image.save(os.path.join(paired_dir, f'{img_id}.png'))
-            blurred_image_bbox_path = os.path.join(paired_dir, f'{img_id}.json')
-            with open(blurred_image_bbox_path, 'w') as file:
-                json.dump(scaled_bboxes, file)
+        paired_image.paste(blurred_image, (original_image.width, 0))
+        
+        # Save paired image
+        paired_image.save(os.path.join(paired_dir, f'{img_id}.png'))
+
+        blurred_image_bbox_path = os.path.join(paired_dir, f'{img_id}.json')
+        with open(blurred_image_bbox_path, 'w') as file:
+            json.dump(scaled_bboxes, file)
                 
-        except Exception as e:
-            print(f"Error processing image {img_id}: {str(e)}")
-            continue
+
+    print('finished')
 
 if __name__ == '__main__':
     data_dir = '/media/Data_2/raw_coco/val2017'
-    paired_dir = '/media/Data_2/blurred_coco/'
+    paired_dir = '/media/Data_2/train/'
     ann_file = '/media/Data_2/raw_coco/annotations'
-    new_og_dir = '/media/Data_2/og_coco/'
     
     # Create paired dataset
     prepare_coco_blur_pairs(data_dir=data_dir, 
                           paired_dir=paired_dir,
                           ann_file='/media/Data_2/raw_coco/annotations/instances_val2017.json',
-                          new_dir=new_og_dir,
                           num_images=1000)
