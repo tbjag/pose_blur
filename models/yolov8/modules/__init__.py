@@ -91,6 +91,7 @@ import torch
 from torch import nn
 import matplotlib.pyplot as plt
 
+from .utils import (scale_img, dist2bbox, make_anchors, xywh2xyxy)
 def make_divisible(x, divisor):
     """
     Returns the nearest number that is divisible by the given divisor.

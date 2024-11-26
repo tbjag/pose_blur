@@ -1,12 +1,18 @@
 import torch
 import torch.nn as nn
-from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization
+from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img
+from loss import v8DetectionLoss, E2EDetectLoss
 import yaml
 from copy import deepcopy
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
+
+def intersect_dicts(da, db, exclude=()):
+    """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
+    return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
+
 
 
 class YOLOv8(nn.Module):
@@ -64,13 +70,13 @@ class YOLOv8(nn.Module):
             return self.loss(x, *args, **kwargs)
         return self.predict(x, *args, **kwargs)
 
+    #Setting augment to True combines the output from all the detection heads
     def predict(self, x, profile=False, visualize=False, augment=False, embed=None):
         """
         Perform a forward pass through the network.
 
         Args:
             x (torch.Tensor): The input tensor to the model.
-            profile (bool):  Print the computation time of each layer if True, defaults to False.
             visualize (bool): Save the feature maps of the model if True, defaults to False.
             augment (bool): Augment image during prediction, defaults to False.
             embed (list, optional): A list of feature vectors/embeddings to return.
@@ -80,15 +86,14 @@ class YOLOv8(nn.Module):
         """
         if augment:
             return self._predict_augment(x)
-        return self._predict_once(x, profile, visualize, embed)
+        return self._predict_once(x, visualize, embed)
 
-    def _predict_once(self, x, profile=False, visualize=False, embed=None):
+    def _predict_once(self, x, visualize=False, embed=None):
         """
         Perform a forward pass through the network.
 
         Args:
             x (torch.Tensor): The input tensor to the model.
-            profile (bool):  Print the computation time of each layer if True, defaults to False.
             visualize (bool): Save the feature maps of the model if True, defaults to False.
             embed (list, optional): A list of feature vectors/embeddings to return.
 
@@ -99,8 +104,6 @@ class YOLOv8(nn.Module):
         for m in self.model:
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
-            if profile:
-                self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
@@ -112,12 +115,78 @@ class YOLOv8(nn.Module):
         return x
 
     def _predict_augment(self, x):
-        """Perform augmentations on input image x and return augmented inference."""
-        print(
-            f"WARNING ⚠️ {self.__class__.__name__} does not support 'augment=True' prediction. "
-            f"Reverting to single-scale prediction."
-        )
-        return self._predict_once(x)
+        """Perform augmentations on input image x and return augmented inference and train outputs."""
+        # if getattr(self, "end2end", False) or self.__class__.__name__ != "DetectionModel":
+        #     print("WARNING ⚠️ Model does not support 'augment=True', reverting to single-scale prediction.")
+        #     return self._predict_once(x)
+        img_size = x.shape[-2:]  # height, width
+        s = [1, 0.83, 0.67]  # scales
+        f = [None, 3, None]  # flips (2-ud, 3-lr)
+        y = []  # outputs
+        for si, fi in zip(s, f):
+            xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
+            yi = self._predict_once(xi)[0]  # forward
+            yi = self._descale_pred(yi, fi, si, img_size)
+            y.append(yi)
+        y = self._clip_augmented(y)  # clip augmented tails
+        print([i.shape for i in y])
+        return torch.cat(y, -1), None  # augmented inference, train
+
+    @staticmethod
+    def _descale_pred(p, flips, scale, img_size, dim=1):
+        """De-scale predictions following augmented inference (inverse operation)."""
+        p[:, :4] /= scale  # de-scale
+        x, y, wh, cls = p.split((1, 1, 2, p.shape[dim] - 4), dim)
+        if flips == 2:
+            y = img_size[0] - y  # de-flip ud
+        elif flips == 3:
+            x = img_size[1] - x  # de-flip lr
+        return torch.cat((x, y, wh, cls), dim)
+
+    def _clip_augmented(self, y):
+        """Clip YOLO augmented inference tails."""
+        nl = self.model[-1].nl  # number of detection layers (P3-P5)
+        print(nl)
+        g = sum(4**x for x in range(nl))  # grid points
+        e = 1  # exclude layer count
+        i = (y[0].shape[-1] // g) * sum(4**x for x in range(e))  # indices
+        y[0] = y[0][..., :-i]  # large
+        i = (y[-1].shape[-1] // g) * sum(4 ** (nl - 1 - x) for x in range(e))  # indices
+        y[-1] = y[-1][..., i:]  # small
+        return y
+    
+    def load(self, weights, verbose=True):
+        """
+        Load the weights into the model.
+
+        Args:
+            weights (dict | torch.nn.Module): The pre-trained weights to be loaded.
+            verbose (bool, optional): Whether to log the transfer progress. Defaults to True.
+        """
+        model = weights["model"] if isinstance(weights, dict) else weights  # torchvision models are not dicts
+        csd = model.float().state_dict()  # checkpoint state_dict as FP32
+        csd = intersect_dicts(csd, self.state_dict())  # intersect
+        self.load_state_dict(csd, strict=False)  # load
+        if verbose:
+            print(f"Transferred {len(csd)}/{len(self.model.state_dict())} items from pretrained weights")
+
+    def loss(self, batch, preds=None):
+        """
+        Compute loss.
+
+        Args:
+            batch (dict): Batch to compute loss on
+            preds (torch.Tensor | List[torch.Tensor]): Predictions.
+        """
+        if getattr(self, "criterion", None) is None:
+            self.criterion = self.init_criterion()
+
+        preds = self.forward(batch["img"]) if preds is None else preds
+        return self.criterion(preds, batch)
+    
+    def init_criterion(self):
+        """Initialize the loss criterion for the DetectionModel."""
+        return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
 
 config = load_yaml('yolov8.yaml')
 print(config)
@@ -126,6 +195,8 @@ if __name__ == "__main__":
     model = YOLOv8(config)
     print(model)
     x = torch.randn(1, 3, 640, 640)  # Example input
-    output = model(x)
-    print(output)
+    print(x.shape)
+    output = model(x, augment = True)
+    print(len(output))
+    print([i.shape for i in output])
     
