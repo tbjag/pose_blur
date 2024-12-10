@@ -15,10 +15,20 @@ IMG_EXTENSIONS = [
     '.tif', '.TIF', '.tiff', '.TIFF',
 ]
 
-
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
+def make_coco_bbox(dir, max_dataset_size=float("inf")):
+    bbox = []
+    assert os.path.isdir(dir), '%s is not a valid directory' % dir
+
+    for root, _, fnames in sorted(os.walk(dir)):
+        for fname in fnames:
+            if fname.endswith('.json'):
+                path = os.path.join(root, fname)
+                bbox.append(path)
+
+    return bbox[:min(max_dataset_size, len(bbox))]
 
 def make_dataset(dir, max_dataset_size=float("inf")):
     images = []
