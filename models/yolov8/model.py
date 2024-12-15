@@ -4,6 +4,7 @@ from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_mode
 from loss import v8DetectionLoss, E2EDetectLoss
 import yaml
 from copy import deepcopy
+import numpy as np
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
@@ -129,7 +130,8 @@ class YOLOv8(nn.Module):
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
-        print([i.shape for i in y])
+        for i, tensor in enumerate(y):
+            print(f"Tensor {i} shape: {tensor.shape}")
         return torch.cat(y, -1), None  # augmented inference, train
 
     @staticmethod
@@ -187,16 +189,64 @@ class YOLOv8(nn.Module):
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
         return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
+    
+    def preprocess(self, im):
+        """
+        Prepares input image before inference.
 
-config = load_yaml('yolov8.yaml')
-print(config)
+        Args:
+            im (torch.Tensor | List(np.ndarray)): BCHW for tensor, [(HWC) x B] for list.
+        """
+        not_tensor = not isinstance(im, torch.Tensor)
+        if not_tensor:
+            im = np.stack(self.pre_transform(im))
+            im = im[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
+            im = np.ascontiguousarray(im)  # contiguous
+            im = torch.from_numpy(im)
+
+        im = im.to(self.device)
+        im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
+        if not_tensor:
+            im /= 255  # 0 - 255 to 0.0 - 1.0
+        return im
+    
+    def get_results(self):
+        """Method made for testing how preprocessing and model predictions work"""
+        pass
+
+# config = load_yaml('yolov8.yaml')
+# print(config)
 
 if __name__ == "__main__":
+    from PIL import Image
+    import torchvision.transforms as transforms
+
+    # Load the image
+    image_path = 'bus.jpg'
+    image = Image.open(image_path).convert('RGB')
+
+    # Define the transformation
+    transform = transforms.Compose([
+        transforms.Resize((640, 640)),
+        transforms.ToTensor(),
+    ])
+
+    # Apply the transformation to the image
+    x = transform(image).unsqueeze(0)  # Add batch dimension
+    print(f"input tensor{x.shape}")
+    
+    config = load_yaml('yolov8.yaml')
+    # print(config)
     model = YOLOv8(config)
-    print(model)
-    x = torch.randn(1, 3, 640, 640)  # Example input
-    print(x.shape)
-    output = model(x, augment = True)
+    # print(model)
+    
+    from ultralytics import YOLO
+    
+    test_model = YOLO("yolov8.yaml","detect")
+    output = test_model(x, augment = False)
+    # print([type(i) for i in output])
+    
+    output = model(x, augment = False)
     print(len(output))
     print([i.shape for i in output])
     
