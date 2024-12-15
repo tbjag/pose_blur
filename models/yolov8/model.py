@@ -5,6 +5,8 @@ from loss import v8DetectionLoss, E2EDetectLoss
 import yaml
 from copy import deepcopy
 import numpy as np
+import ops
+from Results import Results #TODO Fix Result file to remove ultralytics code
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
@@ -41,7 +43,6 @@ class YOLOv8(nn.Module):
                 if self.end2end:
                     return self.forward(x)["one2many"]
                 return self.forward(x)[0] if isinstance(m, (Segment, Pose, OBB)) else self.forward(x)
-
             m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             m.bias_init()  # only run once
@@ -89,22 +90,26 @@ class YOLOv8(nn.Module):
             return self._predict_augment(x)
         return self._predict_once(x, visualize, embed)
 
-    def _predict_once(self, x, visualize=False, embed=None):
+    def _predict_once(self, x, profile=False, visualize=False, embed=None):
         """
         Perform a forward pass through the network.
 
         Args:
             x (torch.Tensor): The input tensor to the model.
+            profile (bool):  Print the computation time of each layer if True, defaults to False.
             visualize (bool): Save the feature maps of the model if True, defaults to False.
             embed (list, optional): A list of feature vectors/embeddings to return.
 
         Returns:
             (torch.Tensor): The last output of the model.
         """
+        print(f"testing my input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
+            if profile:
+                self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
@@ -113,6 +118,8 @@ class YOLOv8(nn.Module):
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
+                
+        print(f"testing my output predict once {[type(i) for i in x]}")
         return x
 
     def _predict_augment(self, x):
@@ -210,6 +217,28 @@ class YOLOv8(nn.Module):
             im /= 255  # 0 - 255 to 0.0 - 1.0
         return im
     
+    def postprocess(self, preds, img, orig_imgs):
+        """Post-processes predictions and returns a list of Results objects."""
+        preds = ops.non_max_suppression(
+            preds,
+            self.args.conf,
+            self.args.iou,
+            agnostic=self.args.agnostic_nms,
+            max_det=self.args.max_det,
+            classes=self.args.classes,
+        )
+        
+        print(f"print post preds {[i.shape for i in preds]}")
+
+        if not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
+            orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
+
+        results = []
+        for pred, orig_img, img_path in zip(preds, orig_imgs, self.batch[0]):
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+            results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
+        return results
+    
     def get_results(self):
         """Method made for testing how preprocessing and model predictions work"""
         pass
@@ -233,20 +262,22 @@ if __name__ == "__main__":
 
     # Apply the transformation to the image
     x = transform(image).unsqueeze(0)  # Add batch dimension
-    print(f"input tensor{x.shape}")
     
     config = load_yaml('yolov8.yaml')
     # print(config)
     model = YOLOv8(config)
+    with open('myyolo.txt', 'w') as f:
+        f.write(f"Yolo model: {model}\n")
     # print(model)
     
     from ultralytics import YOLO
     
     test_model = YOLO("yolov8.yaml","detect")
+    with open('yolo.txt', 'w') as f:
+        f.write(f"Yolo model: {test_model}\n")
     output = test_model(x, augment = False)
     # print([type(i) for i in output])
     
     output = model(x, augment = False)
-    print(len(output))
     print([i.shape for i in output])
     
