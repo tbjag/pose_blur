@@ -112,13 +112,15 @@ class YOLOv8(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
+            with open("output.txt", 'a+') as f:
+                f.write(f"{type(x)}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
-                
+        print(m)
         print(f"testing my output predict once {[type(i) for i in x]}")
         return x
 
@@ -266,15 +268,12 @@ if __name__ == "__main__":
     config = load_yaml('yolov8.yaml')
     # print(config)
     model = YOLOv8(config)
-    with open('myyolo.txt', 'w') as f:
-        f.write(f"Yolo model: {model}\n")
     # print(model)
     
     from ultralytics import YOLO
     
     test_model = YOLO("yolov8.yaml","detect")
-    with open('yolo.txt', 'w') as f:
-        f.write(f"Yolo model: {test_model}\n")
+    
     output = test_model(x, augment = False)
     # print([type(i) for i in output])
     
