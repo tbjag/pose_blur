@@ -1,7 +1,7 @@
 # Ignore the data directory that contains all the mnist files
-data/mnist_all
+data/mnist_all/
 
-data/mnist_blur_pairs
+data/mnist_blur_pairs/
 data/MNIST/*
 
 checkpoints/
