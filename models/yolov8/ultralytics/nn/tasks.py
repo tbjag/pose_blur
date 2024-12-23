@@ -145,6 +145,9 @@ class BaseModel(nn.Module):
         print(f"testing input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
+            with open("yolem.txt", "a+") as f:
+                f.write(f"{type(m)} {m.f}\n")
+                f.write(f"{m}")
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
@@ -152,14 +155,16 @@ class BaseModel(nn.Module):
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             with open("output_yolo.txt", 'a+') as f:
-                f.write(f"{type(x)}\n")
+                if type(x) not in [list,tuple]:
+                    f.write(f"{x.shape}\n")
+                else:
+                    f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
-        print(m)
         print(f"testing output predict once{[type(i) for i in x]}")
         return x
 

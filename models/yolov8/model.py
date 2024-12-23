@@ -1,12 +1,22 @@
 import torch
 import torch.nn as nn
-from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img
+from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW
 from loss import v8DetectionLoss, E2EDetectLoss
 import yaml
 from copy import deepcopy
 import numpy as np
 import ops
 from Results import Results #TODO Fix Result file to remove ultralytics code
+
+from ultralytics.utils.torch_utils import (
+    fuse_conv_and_bn,
+    fuse_deconv_and_bn,
+    initialize_weights,
+    intersect_dicts,
+    model_info,
+    scale_img,
+    time_sync,
+)
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
@@ -106,6 +116,9 @@ class YOLOv8(nn.Module):
         print(f"testing my input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
+            with open("myyolem.txt", "a+") as f:
+                f.write(f"{type(m)} {m.f}\n")
+                f.write(f"{m}")
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
@@ -113,14 +126,16 @@ class YOLOv8(nn.Module):
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             with open("output.txt", 'a+') as f:
-                f.write(f"{type(x)}\n")
+                if type(x) is not list:
+                    f.write(f"{x.shape}\n")
+                else:
+                    f.write(f"{[i.shape for i in x]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
-        print(m)
         print(f"testing my output predict once {[type(i) for i in x]}")
         return x
 
@@ -180,6 +195,60 @@ class YOLOv8(nn.Module):
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
             print(f"Transferred {len(csd)}/{len(self.model.state_dict())} items from pretrained weights")
+            
+    def fuse(self, verbose=True):
+        """
+        Fuse the `Conv2d()` and `BatchNorm2d()` layers of the model into a single layer, in order to improve the
+        computation efficiency.
+
+        Returns:
+            (nn.Module): The fused model is returned.
+        """
+        if not self.is_fused():
+            for m in self.model.modules():
+                if isinstance(m, (Conv, Conv2, DWConv)) and hasattr(m, "bn"):
+                    if isinstance(m, Conv2):
+                        m.fuse_convs()
+                    m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
+                    delattr(m, "bn")  # remove batchnorm
+                    m.forward = m.forward_fuse  # update forward
+                if isinstance(m, ConvTranspose) and hasattr(m, "bn"):
+                    m.conv_transpose = fuse_deconv_and_bn(m.conv_transpose, m.bn)
+                    delattr(m, "bn")  # remove batchnorm
+                    m.forward = m.forward_fuse  # update forward
+                if isinstance(m, RepConv):
+                    m.fuse_convs()
+                    m.forward = m.forward_fuse  # update forward
+                if isinstance(m, RepVGGDW):
+                    m.fuse()
+                    m.forward = m.forward_fuse
+            self.info(verbose=verbose)
+
+        return self
+    
+    def info(self, detailed=False, verbose=True, imgsz=640):
+        """
+        Prints model information.
+
+        Args:
+            detailed (bool): if True, prints out detailed information about the model. Defaults to False
+            verbose (bool): if True, prints out the model information. Defaults to False
+            imgsz (int): the size of the image that the model will be trained on. Defaults to 640
+        """
+        return model_info(self, detailed=detailed, verbose=verbose, imgsz=imgsz)
+
+    def is_fused(self, thresh=10):
+        """
+        Check if the model has less than a certain threshold of BatchNorm layers.
+
+        Args:
+            thresh (int, optional): The threshold number of BatchNorm layers. Default is 10.
+
+        Returns:
+            (bool): True if the number of BatchNorm layers in the model is less than the threshold, False otherwise.
+        """
+        bn = tuple(v for k, v in nn.__dict__.items() if "Norm" in k)  # normalization layers, i.e. BatchNorm2d()
+        return sum(isinstance(v, bn) for v in self.modules()) < thresh  # True if < 'thresh' BatchNorm layers in model
 
     def loss(self, batch, preds=None):
         """
@@ -213,8 +282,9 @@ class YOLOv8(nn.Module):
             im = np.ascontiguousarray(im)  # contiguous
             im = torch.from_numpy(im)
 
-        im = im.to(self.device)
-        im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
+        # im = im.to(self.device)
+        # im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
+        im = im.float()
         if not_tensor:
             im /= 255  # 0 - 255 to 0.0 - 1.0
         return im
@@ -268,15 +338,20 @@ if __name__ == "__main__":
     config = load_yaml('yolov8.yaml')
     # print(config)
     model = YOLOv8(config)
+    model.fuse()
+    x2 = model.preprocess(x)
     # print(model)
+
+        
     
     from ultralytics import YOLO
     
     test_model = YOLO("yolov8.yaml","detect")
+ 
     
     output = test_model(x, augment = False)
     # print([type(i) for i in output])
     
-    output = model(x, augment = False)
+    output = model(x2, augment = False)
     print([i.shape for i in output])
     

@@ -1,46 +1,46 @@
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'list'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'torch.Tensor'>
-<class 'tuple'>
+torch.Size([1, 16, 128, 128])
+torch.Size([1, 32, 64, 64])
+torch.Size([1, 32, 64, 64])
+torch.Size([1, 64, 32, 32])
+torch.Size([1, 64, 32, 32])
+torch.Size([1, 128, 16, 16])
+torch.Size([1, 128, 16, 16])
+torch.Size([1, 256, 8, 8])
+torch.Size([1, 256, 8, 8])
+torch.Size([1, 256, 8, 8])
+torch.Size([1, 256, 16, 16])
+torch.Size([1, 384, 16, 16])
+torch.Size([1, 128, 16, 16])
+torch.Size([1, 128, 32, 32])
+torch.Size([1, 192, 32, 32])
+torch.Size([1, 64, 32, 32])
+torch.Size([1, 64, 16, 16])
+torch.Size([1, 192, 16, 16])
+torch.Size([1, 128, 16, 16])
+torch.Size([1, 128, 8, 8])
+torch.Size([1, 384, 8, 8])
+torch.Size([1, 256, 8, 8])
+torch.Size([1, 144, 32, 32]) [[torch.Size([144, 16, 16])]]
+torch.Size([1, 16, 320, 320])
+torch.Size([1, 32, 160, 160])
+torch.Size([1, 32, 160, 160])
+torch.Size([1, 64, 80, 80])
+torch.Size([1, 64, 80, 80])
+torch.Size([1, 128, 40, 40])
+torch.Size([1, 128, 40, 40])
+torch.Size([1, 256, 20, 20])
+torch.Size([1, 256, 20, 20])
+torch.Size([1, 256, 20, 20])
+torch.Size([1, 256, 40, 40])
+torch.Size([1, 384, 40, 40])
+torch.Size([1, 128, 40, 40])
+torch.Size([1, 128, 80, 80])
+torch.Size([1, 192, 80, 80])
+torch.Size([1, 64, 80, 80])
+torch.Size([1, 64, 40, 40])
+torch.Size([1, 192, 40, 40])
+torch.Size([1, 128, 40, 40])
+torch.Size([1, 128, 20, 20])
+torch.Size([1, 384, 20, 20])
+torch.Size([1, 256, 20, 20])
+torch.Size([1, 84, 8400]) [[torch.Size([1, 144, 80, 80]), torch.Size([1, 144, 40, 40]), torch.Size([1, 144, 20, 20])]]
