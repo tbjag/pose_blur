@@ -80,6 +80,7 @@ class YOLOv8(nn.Module):
         super(YOLOv8, self).__init__()
         self.nc = config['nc']
         self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ch = self.yaml["ch"] = self.yaml.get("ch", ch)
         
         if nc and nc != self.yaml["nc"]:
@@ -129,6 +130,7 @@ class YOLOv8(nn.Module):
         """
         if isinstance(x, dict):  # for cases of training and validating while training.
             return self.loss(x, *args, **kwargs)
+        
         return self.predict(x, *args, **kwargs)
 
     #Setting augment to True combines the output from all the detection heads
@@ -174,12 +176,12 @@ class YOLOv8(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
-            with open("output.txt", 'a+') as f:
-                if type(x) is not list:
+            with open("output.txt", 'w+') as f:
+                if type(x) not in [list,tuple]:
                     f.write(f"{x.shape}\n")
                 else:
                     f.write(f"{m.end2end}")
-                    f.write(f"{[i.shape for i in x]}\n")
+                    f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
                 f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
@@ -340,15 +342,15 @@ class YOLOv8(nn.Module):
             im /= 255  # 0 - 255 to 0.0 - 1.0
         return im
     
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs,img_path):
         """Post-processes predictions and returns a list of Results objects."""
         preds = ops.non_max_suppression(
-            preds,
-            self.args.conf,
-            self.args.iou,
-            agnostic=self.args.agnostic_nms,
-            max_det=self.args.max_det,
-            classes=self.args.classes,
+            preds
+            # self.args.conf,
+            # self.args.iou,
+            # agnostic=self.args.agnostic_nms,
+            # max_det=self.args.max_det,
+            # classes=self.args.classes,
         )
         
         print(f"print post preds {[i.shape for i in preds]}")
@@ -357,14 +359,47 @@ class YOLOv8(nn.Module):
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
 
         results = []
-        for pred, orig_img, img_path in zip(preds, orig_imgs, self.batch[0]):
+        for pred, orig_img in zip(preds, orig_imgs):
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
+            results.append(Results(orig_img, path=img_path, names=self.names, boxes=pred))
         return results
     
-    def get_results(self):
-        """Method made for testing how preprocessing and model predictions work"""
-        pass
+    def inference(self, im0s,img_path):
+        # Check if save_dir/ label file exists
+        # Warmup model
+        model.model[-1].training = False
+        profilers = (
+            ops.Profile(device=self.device),
+            ops.Profile(device=self.device),
+            ops.Profile(device=self.device),
+        )
+        # Preprocess
+        with profilers[0]:
+            im = self.preprocess(im0s)
+
+        # Inference
+        with profilers[1]:
+            preds = self.predict(im)
+            print(f"checking output after inference {preds[0].shape} {[i.shape for i in preds[1]]}")
+            
+        # Postprocess
+        with profilers[2]:
+            self.results = self.postprocess(preds, im, im0s,img_path)
+            
+        # # Visualize, save, write results
+        # n = len(im0s)
+        # for i in range(n):
+        #     self.seen += 1
+        #     self.results[i].speed = {
+        #         "preprocess": profilers[0].dt * 1e3 / n,
+        #         "inference": profilers[1].dt * 1e3 / n,
+        #         "postprocess": profilers[2].dt * 1e3 / n,
+        #     }
+            
+
+        return self.results
+
+    
 
 # config = load_yaml('yolov8.yaml')
 # print(config)
@@ -390,7 +425,6 @@ if __name__ == "__main__":
     # print(config)
     model = YOLOv8(config)
     model.fuse()
-    x2 = model.preprocess(x)
     # print(model)
     struct = YOLOv8Structure()
     
@@ -409,6 +443,6 @@ if __name__ == "__main__":
     output = test_model(x, augment = False)
     print([type(i) for i in output])
     
-    output = model(x2, augment = False)
-    print([i.shape for i in output])
+    output = model.inference(x,image_path)
+    print([type(i) for i in output])
     
