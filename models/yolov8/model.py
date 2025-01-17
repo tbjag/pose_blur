@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW
+from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW, yaml_model_load
 from loss import v8DetectionLoss, E2EDetectLoss
 import yaml
 from copy import deepcopy
@@ -17,6 +17,10 @@ from ultralytics.utils.torch_utils import (
     scale_img,
     time_sync,
 )
+from pathlib import Path
+import re
+
+
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
@@ -32,7 +36,7 @@ class YOLOv8(nn.Module):
     def __init__(self, config="yolov8.yaml", ch=3, nc=None, verbose=True):
         super(YOLOv8, self).__init__()
         self.nc = config['nc']
-        self.yaml = config if isinstance(config, dict) else load_yaml(config)
+        self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
         ch = self.yaml["ch"] = self.yaml.get("ch", ch)
         
         if nc and nc != self.yaml["nc"]:
@@ -113,7 +117,7 @@ class YOLOv8(nn.Module):
         Returns:
             (torch.Tensor): The last output of the model.
         """
-        print(f"testing my input predict once{x.shape}")
+        # print(f"testing my input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
             with open("myyolem.txt", "a+") as f:
@@ -123,20 +127,22 @@ class YOLOv8(nn.Module):
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
-            x = m(x)  # run
+            x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
             with open("output.txt", 'a+') as f:
                 if type(x) is not list:
                     f.write(f"{x.shape}\n")
                 else:
+                    f.write(f"{m.end2end}")
                     f.write(f"{[i.shape for i in x]}\n")
+                f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
-        print(f"testing my output predict once {[type(i) for i in x]}")
+        # print(f"testing my output predict once {[type(i) for i in x]}")
         return x
 
     def _predict_augment(self, x):
@@ -341,7 +347,7 @@ if __name__ == "__main__":
     model.fuse()
     x2 = model.preprocess(x)
     # print(model)
-
+    
         
     
     from ultralytics import YOLO
