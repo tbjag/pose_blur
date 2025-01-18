@@ -54,10 +54,27 @@ class COCODataset(BaseDataset):
         A = A_transform(A)
         B = B_transform(B)
 
-        with open(self.json_paths[index], 'w') as file:
-            bbox = json.load(file)
+        bbox = []
+        json_path = self.json_paths[index]
+        try:
+            with open(json_path, 'r') as file:
+                if file.readable() and file.seek(0) or file.read(1):  # Check if file is not empty
+                    file.seek(0)  # Reset file pointer after check
+                    bbox = json.load(file)
+                else:
+                    print(f"Empty JSON file: {json_path}")
+        except json.JSONDecodeError:
+            print(f"Malformed JSON file: {json_path}")
+        except Exception as e:
+            print(f"Error loading JSON file {json_path}: {e}")
 
         return {'A': A, 'B': B, 'A_paths': AB_path, 'B_paths': AB_path, 'bbox': bbox}
+
+    """         with open(self.json_paths[index], 'r') as file:
+            print(self.json_paths[index])
+            bbox = json.load(file)
+
+        return {'A': A, 'B': B, 'A_paths': AB_path, 'B_paths': AB_path, 'bbox': bbox} """
 
     def __len__(self):
         """Return the total number of images in the dataset."""
