@@ -20,7 +20,8 @@ from ultralytics.utils.torch_utils import (
 from pathlib import Path
 import re
 
-
+#TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
+#TO DO: Make the W-net
 
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
@@ -30,22 +31,71 @@ def intersect_dicts(da, db, exclude=()):
     """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
+class YOLOv8Structure(nn.Module):
+    def __init__(self, nc=80, ch=3):
+        super(YOLOv8Structure, self).__init__()
+        self.nc = nc
+        
+        # Define backbone
+        modules = [
+            Conv(ch, 16, 3, 2),                # P1/2
+            Conv(16, 32, 3, 2),                # P2/4
+            C2f(32, 32, n=1, shortcut=True),   # Changed n=3 to n=1
+            Conv(32, 64, 3, 2),                # P3/8
+            C2f(64, 64, n=2, shortcut=True),   # Changed n=6 to n=2
+            Conv(64, 128, 3, 2),               # P4/16
+            C2f(128, 128, n=2, shortcut=True), # Changed n=6 to n=2
+            Conv(128, 256, 3, 2),              # P5/32
+            C2f(256, 256, n=1, shortcut=True), # Changed n=3 to n=1
+            SPPF(256, 256, k=5),
+            nn.Upsample(scale_factor=2, mode="nearest"),
+            Concat(1),
+            C2f(384, 128, n=1),               # Changed n=3 to n=1
+            nn.Upsample(scale_factor=2, mode="nearest"),
+            Concat(1),
+            C2f(192, 64, n=1),                # Changed n=3 to n=1
+            Conv(64, 64, 3, 2),
+            Concat(1),
+            C2f(192, 128, n=1),               # Changed n=3 to n=1
+            Conv(128, 128, 3, 2),
+            Concat(1),
+            C2f(384, 256, n=1),               # Changed n=3 to n=1
+            Detect(nc, [64, 128, 256])        # Detection head with correct channels
+        ]
 
 
+        f = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,[-1,6],-1,-1,[-1,4],-1,-1,[-1,12],-1,-1,[-1,9],-1,[15, 18, 21]]
+        for i in range(len(modules)):
+            m = modules[i]
+            m.i, m.f= i, f[i]
+            
+        self.model = nn.Sequential(*modules)
+            
+    
+
+    def forward(self, x):
+        return self.model(x)
+    
 class YOLOv8(nn.Module):
     def __init__(self, config="yolov8.yaml", ch=3, nc=None, verbose=True):
         super(YOLOv8, self).__init__()
         self.nc = config['nc']
         self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
-        ch = self.yaml["ch"] = self.yaml.get("ch", ch)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # ch = self.yaml["ch"] = self.yaml.get("ch", ch)
+        ch = 3
         
         if nc and nc != self.yaml["nc"]:
             print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml["nc"] = nc  # override YAML value
             
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
-        self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
-        self.inplace = self.yaml.get("inplace", True)
+        # self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
+        self.model = YOLOv8Structure().model
+        self.save = [4, 6, 9, 12, 15, 18, 21]
+        # self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
+        self.names = {0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: '11', 12: '12', 13: '13', 14: '14', 15: '15', 16: '16', 17: '17', 18: '18', 19: '19', 20: '20', 21: '21', 22: '22', 23: '23', 24: '24', 25: '25', 26: '26', 27: '27', 28: '28', 29: '29', 30: '30', 31: '31', 32: '32', 33: '33', 34: '34', 35: '35', 36: '36', 37: '37', 38: '38', 39: '39', 40: '40', 41: '41', 42: '42', 43: '43', 44: '44', 45: '45', 46: '46', 47: '47', 48: '48', 49: '49', 50: '50', 51: '51', 52: '52', 53: '53', 54: '54', 55: '55', 56: '56', 57: '57', 58: '58', 59: '59', 60: '60', 61: '61', 62: '62', 63: '63', 64: '64', 65: '65', 66: '66', 67: '67', 68: '68', 69: '69', 70: '70', 71: '71', 72: '72', 73: '73', 74: '74', 75: '75', 76: '76', 77: '77', 78: '78', 79: '79'}
+        # self.inplace = self.yaml.get("inplace", True)
+        self.inplace = True
         self.end2end = getattr(self.model[-1], "end2end", False)
         m = self.model[-1]  # Detect()
         if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
@@ -84,6 +134,7 @@ class YOLOv8(nn.Module):
         """
         if isinstance(x, dict):  # for cases of training and validating while training.
             return self.loss(x, *args, **kwargs)
+        
         return self.predict(x, *args, **kwargs)
 
     #Setting augment to True combines the output from all the detection heads
@@ -120,22 +171,22 @@ class YOLOv8(nn.Module):
         # print(f"testing my input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
-            with open("myyolem.txt", "a+") as f:
-                f.write(f"{type(m)} {m.f}\n")
-                f.write(f"{m}")
+            # with open("myyolem.txt", "a+") as f:
+            #     f.write(f"{type(m)} {m.f}\n")
+            #     f.write(f"{m}")
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
-            with open("output.txt", 'a+') as f:
-                if type(x) is not list:
-                    f.write(f"{x.shape}\n")
-                else:
-                    f.write(f"{m.end2end}")
-                    f.write(f"{[i.shape for i in x]}\n")
-                f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            # with open("output.txt", 'w+') as f:
+            #     if type(x) not in [list,tuple]:
+            #         f.write(f"{x.shape}\n")
+            #     else:
+            #         f.write(f"{m.end2end}")
+            #         f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+            #     f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
@@ -160,8 +211,8 @@ class YOLOv8(nn.Module):
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
-        for i, tensor in enumerate(y):
-            print(f"Tensor {i} shape: {tensor.shape}")
+        # for i, tensor in enumerate(y):
+        #     print(f"Tensor {i} shape: {tensor.shape}")
         return torch.cat(y, -1), None  # augmented inference, train
 
     @staticmethod
@@ -178,7 +229,6 @@ class YOLOv8(nn.Module):
     def _clip_augmented(self, y):
         """Clip YOLO augmented inference tails."""
         nl = self.model[-1].nl  # number of detection layers (P3-P5)
-        print(nl)
         g = sum(4**x for x in range(nl))  # grid points
         e = 1  # exclude layer count
         i = (y[0].shape[-1] // g) * sum(4**x for x in range(e))  # indices
@@ -295,34 +345,64 @@ class YOLOv8(nn.Module):
             im /= 255  # 0 - 255 to 0.0 - 1.0
         return im
     
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs,img_path):
         """Post-processes predictions and returns a list of Results objects."""
         preds = ops.non_max_suppression(
-            preds,
-            self.args.conf,
-            self.args.iou,
-            agnostic=self.args.agnostic_nms,
-            max_det=self.args.max_det,
-            classes=self.args.classes,
+            preds
+            # self.args.conf,
+            # self.args.iou,
+            # agnostic=self.args.agnostic_nms,
+            # max_det=self.args.max_det,
+            # classes=self.args.classes,
         )
         
-        print(f"print post preds {[i.shape for i in preds]}")
+        # print(f"print post preds {[i.shape for i in preds]}")
 
         if not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
 
         results = []
-        for pred, orig_img, img_path in zip(preds, orig_imgs, self.batch[0]):
+        for pred, orig_img in zip(preds, orig_imgs):
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
+            results.append(Results(orig_img, path=img_path, names=self.names, boxes=pred))
         return results
     
-    def get_results(self):
-        """Method made for testing how preprocessing and model predictions work"""
-        pass
+    def inference(self, im0s,img_path):
+        # Check if save_dir/ label file exists
+        # Warmup model
+        model.model[-1].training = False
+        profilers = (
+            ops.Profile(device=self.device),
+            ops.Profile(device=self.device),
+            ops.Profile(device=self.device),
+        )
+        # Preprocess
+        with profilers[0]:
+            im = self.preprocess(im0s)
 
-# config = load_yaml('yolov8.yaml')
-# print(config)
+        # Inference
+        with profilers[1]:
+            preds = self.predict(im)
+            # print(f"checking output after inference {preds[0].shape} {[i.shape for i in preds[1]]}")
+            
+        # Postprocess
+        with profilers[2]:
+            self.results = self.postprocess(preds, im, im0s,img_path)
+            
+        # # Visualize, save, write results
+        # n = len(im0s)
+        # for i in range(n):
+        #     self.seen += 1
+        #     self.results[i].speed = {
+        #         "preprocess": profilers[0].dt * 1e3 / n,
+        #         "inference": profilers[1].dt * 1e3 / n,
+        #         "postprocess": profilers[2].dt * 1e3 / n,
+        #     }
+            
+
+        return self.results
+
+    
 
 if __name__ == "__main__":
     from PIL import Image
@@ -345,19 +425,21 @@ if __name__ == "__main__":
     # print(config)
     model = YOLOv8(config)
     model.fuse()
-    x2 = model.preprocess(x)
     # print(model)
-    
-        
+    struct = YOLOv8Structure()
     
     from ultralytics import YOLO
     
     test_model = YOLO("yolov8.yaml","detect")
+    # with open("yolo_yaml.txt", "w") as f:
+    #     f.write(str(test_model.model))
+    # with open("yolo_struct.txt", "w") as f:
+    #     f.write(str(struct.model))
  
     
     output = test_model(x, augment = False)
-    # print([type(i) for i in output])
+    print([type(i) for i in output])
     
-    output = model(x2, augment = False)
-    print([i.shape for i in output])
+    output = model.inference(x,image_path)
+    print([type(i) for i in output])
     

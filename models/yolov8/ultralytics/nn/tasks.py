@@ -145,22 +145,22 @@ class BaseModel(nn.Module):
         # print(f"testing input predict once{x.shape}")
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
-            with open("yolem.txt", "a+") as f:
-                f.write(f"{type(m)} {m.f}\n")
-                f.write(f"{m}")
+            # with open("yolem.txt", "w+") as f:
+            #     f.write(f"{type(m)} {m.f}\n")
+            #     f.write(f"{m}")
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
-            with open("output_yolo.txt", 'a+') as f:
-                if type(x) not in [list,tuple]:
-                    f.write(f"{x.shape}\n")
-                else:
-                    f.write(f"{m.end2end}")
-                    f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-                f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            # with open("output_yolo.txt", 'w+') as f:
+            #     if type(x) not in [list,tuple]:
+            #         f.write(f"{x.shape}\n")
+            #     else:
+            #         f.write(f"{m.end2end}")
+            #         f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+            #     f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
