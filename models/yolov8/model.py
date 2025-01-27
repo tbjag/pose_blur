@@ -284,7 +284,7 @@ class YOLOv8(nn.Module):
             with open("test_model_weights.txt","w+") as f:
                 f.write(f"{new_state_dict.items()}")
             # 4. Load weights
-            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=True,assign=True)
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
@@ -517,7 +517,7 @@ if __name__ == "__main__":
     import torchvision.transforms as transforms
 
     # Load the image
-    image_path = 'bus.jpg'
+    image_path = 'original.jpg'
     image = Image.open(image_path).convert('RGB')
 
     # Define the transformation
