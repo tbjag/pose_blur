@@ -23,6 +23,31 @@ import re
 #TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
 #TO DO: Make the W-net
 
+# def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
+#     """Loads a single model weights."""
+#     ckpt, weight = torch_safe_load(weight)  # load ckpt
+#     args = {**DEFAULT_CFG_DICT, **(ckpt.get("train_args", {}))}  # combine model and default args, preferring model args
+#     model = (ckpt.get("ema") or ckpt["model"]).to(device).float()  # FP32 model
+
+#     # Model compatibility updates
+#     model.args = {k: v for k, v in args.items() if k in DEFAULT_CFG_KEYS}  # attach args to model
+#     model.pt_path = weight  # attach *.pt file path to model
+#     model.task = guess_model_task(model)
+#     if not hasattr(model, "stride"):
+#         model.stride = torch.tensor([32.0])
+
+#     model = model.fuse().eval() if fuse and hasattr(model, "fuse") else model.eval()  # model in eval mode
+
+#     # Module updates
+#     for m in model.modules():
+#         if hasattr(m, "inplace"):
+#             m.inplace = inplace
+#         elif isinstance(m, nn.Upsample) and not hasattr(m, "recompute_scale_factor"):
+#             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
+
+#     # Return model and ckpt
+#     return model, ckpt
+
 def load_yaml(file_path):
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
@@ -79,15 +104,15 @@ class YOLOv8Structure(nn.Module):
 class YOLOv8(nn.Module):
     def __init__(self, config="yolov8.yaml", ch=3, nc=None, verbose=True):
         super(YOLOv8, self).__init__()
-        self.nc = config['nc']
-        self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
+        self.nc = 80
+        # self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ch = self.yaml["ch"] = self.yaml.get("ch", ch)
         ch = 3
         
-        if nc and nc != self.yaml["nc"]:
-            print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-            self.yaml["nc"] = nc  # override YAML value
+        # if nc and nc != self.yaml["nc"]:
+        #     print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
+        #     self.yaml["nc"] = nc  # override YAML value
             
         # self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
         self.model = YOLOv8Structure().model
@@ -237,6 +262,41 @@ class YOLOv8(nn.Module):
         y[-1] = y[-1][..., i:]  # small
         return y
     
+    def load_checkpoint(self, checkpoint_path, device='cpu', verbose=True):
+        """Load and transfer weights from checkpoint"""
+        try:
+            # 1. Load checkpoint
+            ckpt = torch.load(checkpoint_path, map_location=device)
+            
+            # 2. Extract state dict
+            if isinstance(ckpt, dict):
+                state_dict = ckpt.get('model', ckpt)
+            
+            # 3. Handle different model prefixes
+            new_state_dict = {}
+            for k, v in state_dict.state_dict().items():
+                # Remove 'model.' prefix if present
+                new_key = k.replace('model.','')
+                # Add back model prefix to match target
+                new_key = f'model.{new_key}'
+                new_state_dict[new_key] = v.float()
+
+            with open("test_model_weights.txt","w+") as f:
+                f.write(f"{new_state_dict.items()}")
+            # 4. Load weights
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
+            
+            if verbose:
+                print(f'Loaded checkpoint: {checkpoint_path}')
+                print(f'Missing keys: {len(missing)}')
+                print(f'Unexpected keys: {len(unexpected)}')
+                
+            return True
+
+        except Exception as e:
+            print(f'Error loading checkpoint: {str(e)}')
+            return False
+        
     def load(self, weights, verbose=True):
         """
         Load the weights into the model.
@@ -402,7 +462,55 @@ class YOLOv8(nn.Module):
 
         return self.results
 
+
+
+# Usage:
+def compare_models(model1, model2, threshold=1e-6):
+    """Compare weights between two models"""
+    # Get state dicts
+    state_dict1 = model1.state_dict()
+    state_dict2 = model2.state_dict()
     
+    comparison = {}
+    with open("my_model.txt", "w+") as f:
+        f.write(str(state_dict1.items()))
+    with open("loaded_model.txt", "w+") as f:
+        f.write(str(state_dict2.items()))
+    
+
+    
+    
+    # Compare each layer
+    for key in state_dict1.keys():
+        if key in state_dict2:
+            tensor1 = state_dict1[key]
+            tensor2 = state_dict2[key]
+            
+            comparison[key] = {
+                'shape_match': tensor1.shape == tensor2.shape,
+                'shape1': tuple(tensor1.shape),
+                'shape2': tuple(tensor2.shape),
+                'mean_diff': (tensor1 - tensor2).abs().mean().item() if tensor1.shape == tensor2.shape else None,
+                'max_diff': (tensor1 - tensor2).abs().max().item() if tensor1.shape == tensor2.shape else None
+            }
+    
+    # Print report
+    
+    with open("compare_model_weights.txt","w+") as f:
+        f.write("\nModel Comparison Report:")
+        for key, info in comparison.items():
+            if not info['shape_match'] or info['mean_diff'] > threshold:
+                f.write(f"\nLayer: {key}")
+                f.write(f"Shape match: {info['shape_match']}")
+                f.write(f"Shape1: {info['shape1']}")
+                f.write(f"Shape2: {info['shape2']}")
+                if info['shape_match']:
+                    f.write(f"Mean diff: {info['mean_diff']:.6f}")
+                    f.write(f"Max diff: {info['max_diff']:.6f}")
+    
+    return comparison
+
+
 
 if __name__ == "__main__":
     from PIL import Image
@@ -421,25 +529,32 @@ if __name__ == "__main__":
     # Apply the transformation to the image
     x = transform(image).unsqueeze(0)  # Add batch dimension
     
-    config = load_yaml('yolov8.yaml')
+    
     # print(config)
-    model = YOLOv8(config)
-    model.fuse()
+    model = YOLOv8()
+    model.load_checkpoint("yolov8n.pt")
+    
     # print(model)
-    struct = YOLOv8Structure()
     
     from ultralytics import YOLO
     
-    test_model = YOLO("yolov8.yaml","detect")
+    test_model = YOLO("yolov8n.pt","detect")
     # with open("yolo_yaml.txt", "w") as f:
     #     f.write(str(test_model.model))
     # with open("yolo_struct.txt", "w") as f:
     #     f.write(str(struct.model))
+    
+    comparison = compare_models(model, test_model.model)
  
     
     output = test_model(x, augment = False)
-    print([type(i) for i in output])
+    print(output[0].boxes)
+    for result in output:
+        im = result.plot(show=True)
     
-    output = model.inference(x,image_path)
-    print([type(i) for i in output])
+    results = model.inference(x, image_path)
+    print(results[0].boxes)
+    for result in results:
+        im = result.plot(show=True)
+    
     
