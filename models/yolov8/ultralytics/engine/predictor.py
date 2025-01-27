@@ -253,6 +253,8 @@ class BasePredictor:
                 # Inference
                 with profilers[1]:
                     preds = self.inference(im, *args, **kwargs)
+                    # with open("output.txt", "w+") as f:
+                    #     f.write(f"{preds}")
                     # print(f"checking output after inference {preds[0].shape} {[i.shape for i in preds[1]]}")
                     if self.args.embed:
                         yield from [preds] if isinstance(preds, torch.Tensor) else preds  # yield embedding tensors

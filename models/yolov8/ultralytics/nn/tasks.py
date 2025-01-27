@@ -143,6 +143,7 @@ class BaseModel(nn.Module):
             (torch.Tensor): The last output of the model.
         """
         # print(f"testing input predict once{x.shape}")
+
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
             # with open("yolem.txt", "w+") as f:
@@ -154,13 +155,14 @@ class BaseModel(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
-            # with open("output_yolo.txt", 'w+') as f:
-            #     if type(x) not in [list,tuple]:
-            #         f.write(f"{x.shape}\n")
-            #     else:
-            #         f.write(f"{m.end2end}")
-            #         f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-            #     f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            with open("output_yolo.txt", 'a+') as f:
+                f.write(f"{x}")
+                # if type(x) not in [list,tuple]:
+                #     f.write(f"{x.shape}\n")
+                # else:
+                #     f.write(f"{m.end2end}")
+                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:

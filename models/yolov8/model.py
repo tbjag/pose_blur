@@ -194,6 +194,7 @@ class YOLOv8(nn.Module):
             (torch.Tensor): The last output of the model.
         """
         # print(f"testing my input predict once{x.shape}")
+            
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
             # with open("myyolem.txt", "a+") as f:
@@ -205,13 +206,14 @@ class YOLOv8(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
-            # with open("output.txt", 'w+') as f:
-            #     if type(x) not in [list,tuple]:
-            #         f.write(f"{x.shape}\n")
-            #     else:
-            #         f.write(f"{m.end2end}")
-            #         f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-            #     f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            with open("output.txt", 'a+') as f:
+                f.write(f"{x}")
+                # if type(x) not in [list,tuple]:
+                #     f.write(f"{x.shape}\n")
+                # else:
+                #     f.write(f"{m.end2end}")
+                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
@@ -284,7 +286,7 @@ class YOLOv8(nn.Module):
             with open("test_model_weights.txt","w+") as f:
                 f.write(f"{new_state_dict.items()}")
             # 4. Load weights
-            missing, unexpected = self.load_state_dict(new_state_dict, strict=True,assign=True)
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
@@ -443,6 +445,8 @@ class YOLOv8(nn.Module):
         # Inference
         with profilers[1]:
             preds = self.predict(im)
+            # with open("out.txt", "w+") as f:
+            #     f.write(f"{preds}")
             # print(f"checking output after inference {preds[0].shape} {[i.shape for i in preds[1]]}")
             
         # Postprocess
