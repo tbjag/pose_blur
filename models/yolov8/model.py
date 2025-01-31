@@ -24,6 +24,8 @@ import re
 
 #TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
 #TO DO: Make the W-net
+#To DO: Labels
+#Fix weights slightly
 
 
 
@@ -77,6 +79,28 @@ class YOLOv8Structure(nn.Module):
     def forward(self, x):
         return self.model(x)
     
+COCO_CLASSES = {
+    0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 
+    6: 'train', 7: 'truck', 8: 'boat', 9: 'traffic light', 10: 'fire hydrant',
+    11: 'stop sign', 12: 'parking meter', 13: 'bench', 14: 'bird', 15: 'cat',
+    16: 'dog', 17: 'horse', 18: 'sheep', 19: 'cow', 20: 'elephant',
+    21: 'bear', 22: 'zebra', 23: 'giraffe', 24: 'backpack', 25: 'umbrella',
+    26: 'handbag', 27: 'tie', 28: 'suitcase', 29: 'frisbee', 30: 'skis',
+    31: 'snowboard', 32: 'sports ball', 33: 'kite', 34: 'baseball bat', 35: 'baseball glove',
+    36: 'skateboard', 37: 'surfboard', 38: 'tennis racket', 39: 'bottle', 40: 'wine glass',
+    41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
+    46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli',
+    51: 'carrot', 52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake',
+    56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
+    61: 'toilet', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote',
+    66: 'keyboard', 67: 'cell phone', 68: 'microwave', 69: 'oven', 70: 'toaster',
+    71: 'sink', 72: 'refrigerator', 73: 'book', 74: 'clock', 75: 'vase',
+    76: 'scissors', 77: 'teddy bear', 78: 'hair drier', 79: 'toothbrush'
+}
+
+
+
+    
 class YOLOv8(nn.Module):
     def __init__(self, config="yolov8.yaml", ch=3, nc=None, verbose=True):
         super(YOLOv8, self).__init__()
@@ -94,7 +118,7 @@ class YOLOv8(nn.Module):
         self.model = YOLOv8Structure().model
         self.save = [4, 6, 9, 12, 15, 18, 21]
         # self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
-        self.names = {0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: '11', 12: '12', 13: '13', 14: '14', 15: '15', 16: '16', 17: '17', 18: '18', 19: '19', 20: '20', 21: '21', 22: '22', 23: '23', 24: '24', 25: '25', 26: '26', 27: '27', 28: '28', 29: '29', 30: '30', 31: '31', 32: '32', 33: '33', 34: '34', 35: '35', 36: '36', 37: '37', 38: '38', 39: '39', 40: '40', 41: '41', 42: '42', 43: '43', 44: '44', 45: '45', 46: '46', 47: '47', 48: '48', 49: '49', 50: '50', 51: '51', 52: '52', 53: '53', 54: '54', 55: '55', 56: '56', 57: '57', 58: '58', 59: '59', 60: '60', 61: '61', 62: '62', 63: '63', 64: '64', 65: '65', 66: '66', 67: '67', 68: '68', 69: '69', 70: '70', 71: '71', 72: '72', 73: '73', 74: '74', 75: '75', 76: '76', 77: '77', 78: '78', 79: '79'}
+        self.names = COCO_CLASSES
         # self.inplace = self.yaml.get("inplace", True)
         self.inplace = True
         self.end2end = getattr(self.model[-1], "end2end", False)
@@ -264,7 +288,7 @@ class YOLOv8(nn.Module):
             with open("test_model_weights.txt","w+") as f:
                 f.write(f"{new_state_dict.items()}")
             # 4. Load weights
-            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=True,assign=True)
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
