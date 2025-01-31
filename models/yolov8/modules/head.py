@@ -28,7 +28,7 @@ class Detect(nn.Module):
     shape = None
     anchors = torch.empty(0)  # init
     strides = torch.empty(0)  # init
-    legacy = False  # backward compatibility for v3/v5/v8/v9 models
+    legacy = True  # backward compatibility for v3/v5/v8/v9 models
 
     def __init__(self, nc=80, ch=()):
         """Initializes the YOLO detection layer with specified number of classes and channels."""

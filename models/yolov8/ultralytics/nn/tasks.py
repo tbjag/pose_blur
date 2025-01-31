@@ -146,6 +146,25 @@ class BaseModel(nn.Module):
 
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
+            with open("yolo_model_weights.txt", "a+") as f:
+                f.write(f"\nLayer: {type(m).__name__}\n")
+                total_params = 0
+                
+                # Get state dict
+                for name, param in m.state_dict().items():
+                    f.write(f"\nParameter: {name}\n")
+                    f.write(f"Shape: {param.shape}\n")
+                    f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
+                    total_params += param.numel()
+                    
+                f.write(f"\nTotal parameters: {total_params:,}\n")
+                f.write("-" * 80 + "\n")
+                # if type(x) not in [list,tuple]:
+                #     f.write(f"{x.shape}\n")
+                # else:
+                #     f.write(f"{m.end2end}")
+                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             # with open("yolem.txt", "w+") as f:
             #     f.write(f"{type(m)} {m.f}\n")
             #     f.write(f"{m}")
@@ -155,14 +174,7 @@ class BaseModel(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
-            with open("output_yolo.txt", 'a+') as f:
-                f.write(f"{x}")
-                # if type(x) not in [list,tuple]:
-                #     f.write(f"{x.shape}\n")
-                # else:
-                #     f.write(f"{m.end2end}")
-                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:

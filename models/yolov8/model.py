@@ -20,37 +20,13 @@ from ultralytics.utils.torch_utils import (
 from pathlib import Path
 import re
 
+#To fix loading model issue make self.legacy true in Head module
+
 #TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
 #TO DO: Make the W-net
 
-# def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
-#     """Loads a single model weights."""
-#     ckpt, weight = torch_safe_load(weight)  # load ckpt
-#     args = {**DEFAULT_CFG_DICT, **(ckpt.get("train_args", {}))}  # combine model and default args, preferring model args
-#     model = (ckpt.get("ema") or ckpt["model"]).to(device).float()  # FP32 model
 
-#     # Model compatibility updates
-#     model.args = {k: v for k, v in args.items() if k in DEFAULT_CFG_KEYS}  # attach args to model
-#     model.pt_path = weight  # attach *.pt file path to model
-#     model.task = guess_model_task(model)
-#     if not hasattr(model, "stride"):
-#         model.stride = torch.tensor([32.0])
 
-#     model = model.fuse().eval() if fuse and hasattr(model, "fuse") else model.eval()  # model in eval mode
-
-#     # Module updates
-#     for m in model.modules():
-#         if hasattr(m, "inplace"):
-#             m.inplace = inplace
-#         elif isinstance(m, nn.Upsample) and not hasattr(m, "recompute_scale_factor"):
-#             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
-
-#     # Return model and ckpt
-#     return model, ckpt
-
-def load_yaml(file_path):
-    with open(file_path, 'r') as file:
-        return yaml.safe_load(file)
 
 def intersect_dicts(da, db, exclude=()):
     """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
@@ -123,20 +99,10 @@ class YOLOv8(nn.Module):
         self.inplace = True
         self.end2end = getattr(self.model[-1], "end2end", False)
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
-            s = 256  # 2x min stride
-            m.inplace = self.inplace
-
-            def _forward(x):
-                """Performs a forward pass through the model, handling different Detect subclass types accordingly."""
-                if self.end2end:
-                    return self.forward(x)["one2many"]
-                return self.forward(x)[0] if isinstance(m, (Segment, Pose, OBB)) else self.forward(x)
-            m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
-            self.stride = m.stride
-            m.bias_init()  # only run once
-        else:
-            self.stride = torch.Tensor([32])  # default stride for i.e. RTDETR
+        m.stride = torch.tensor([ 8., 16., 32.])# forward
+        self.stride = m.stride
+        m.bias_init()  # only run once
+        
 
         # Init weights, biases
         initialize_weights(self)
@@ -197,6 +163,25 @@ class YOLOv8(nn.Module):
             
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
+            with open("model_weights.txt", "a+") as f:
+                f.write(f"\nLayer: {type(m).__name__}\n")
+                total_params = 0
+                
+                # Get state dict
+                for name, param in m.state_dict().items():
+                    f.write(f"\nParameter: {name}\n")
+                    f.write(f"Shape: {param.shape}\n")
+                    f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
+                    total_params += param.numel()
+                    
+                f.write(f"\nTotal parameters: {total_params:,}\n")
+                f.write("-" * 80 + "\n")
+                # if type(x) not in [list,tuple]:
+                #     f.write(f"{x.shape}\n")
+                # else:
+                #     f.write(f"{m.end2end}")
+                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
+                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
             # with open("myyolem.txt", "a+") as f:
             #     f.write(f"{type(m)} {m.f}\n")
             #     f.write(f"{m}")
@@ -206,14 +191,7 @@ class YOLOv8(nn.Module):
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
-            with open("output.txt", 'a+') as f:
-                f.write(f"{x}")
-                # if type(x) not in [list,tuple]:
-                #     f.write(f"{x.shape}\n")
-                # else:
-                #     f.write(f"{m.end2end}")
-                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
+            
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
             if embed and m.i in embed:
@@ -290,8 +268,8 @@ class YOLOv8(nn.Module):
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
-                print(f'Missing keys: {len(missing)}')
-                print(f'Unexpected keys: {len(unexpected)}')
+                print(f'Missing keys: {missing}')
+                print(f'Unexpected keys: {unexpected}')
                 
             return True
 
