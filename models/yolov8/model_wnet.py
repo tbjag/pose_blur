@@ -39,40 +39,78 @@ class YOLOv8Structure(nn.Module):
         super(YOLOv8Structure, self).__init__()
         self.nc = nc
         
-        # Define backbone
-        modules = [
-            Conv(ch, 16, 3, 2),                # P1/2
-            Conv(16, 32, 3, 2),                # P2/4
-            C2f(32, 32, n=1, shortcut=True),   # Changed n=3 to n=1
-            Conv(32, 64, 3, 2),                # P3/8
-            C2f(64, 64, n=2, shortcut=True),   # Changed n=6 to n=2
-            Conv(64, 128, 3, 2),               # P4/16
-            C2f(128, 128, n=2, shortcut=True), # Changed n=6 to n=2
-            Conv(128, 256, 3, 2),              # P5/32
-            C2f(256, 256, n=1, shortcut=True), # Changed n=3 to n=1
-            SPPF(256, 256, k=5),
-            nn.Upsample(scale_factor=2, mode="nearest"),
-            Concat(1),
-            C2f(384, 128, n=1),               # Changed n=3 to n=1
-            nn.Upsample(scale_factor=2, mode="nearest"),
-            Concat(1),
-            C2f(192, 64, n=1),                # Changed n=3 to n=1
-            Conv(64, 64, 3, 2),
-            Concat(1),
-            C2f(192, 128, n=1),               # Changed n=3 to n=1
-            Conv(128, 128, 3, 2),
-            Concat(1),
-            C2f(384, 256, n=1),               # Changed n=3 to n=1
-            Detect(nc, [64, 128, 256])        # Detection head with correct channels
+        # Define backbone with layer connections
+        module_config = [
+             # First Backbone (Downsampling)
+            (Conv(ch, 16, 3, 2), -1),                # 0: P1/2
+            (Conv(16, 32, 3, 2), -1),                # 1: P2/4  
+            (C2f(32, 32, n=1, shortcut=True), -1),   # 2
+            (Conv(32, 64, 3, 2), -1),                # 3: P3/8
+            (C2f(64, 64, n=2, shortcut=True), -1),   # 4
+            (Conv(64, 128, 3, 2), -1),               # 5: P4/16
+            (C2f(128, 128, n=2, shortcut=True), -1), # 6
+            (Conv(128, 256, 3, 2), -1),              # 7: P5/32
+            (C2f(256, 256, n=1, shortcut=True), -1), # 8
+            (SPPF(256, 256, k=5), -1),               # 9
+            
+           # First Upsampling Path
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 10
+            (Concat(1), [-1, 6]),                     # 11
+            (C2f(384, 128, n=1), -1),                # 12
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 13
+            (Concat(1), [-1, 4]),                     # 14
+            (C2f(192, 64, n=1), -1),                 # 15
+            
+            # Second Backbone (Mirror)
+            (Conv(64, 64, 3, 2), -1),                # 16: P3/8
+            (C2f(64, 64, n=2, shortcut=True), -1),   # 17
+            (Conv(64, 128, 3, 2), -1),               # 18: P4/16
+            (C2f(128, 128, n=2, shortcut=True), -1), # 19
+            (Conv(128, 256, 3, 2), -1),              # 20: P5/32
+            (C2f(256, 256, n=1, shortcut=True), -1), # 21
+            # (Detect(nc, [64, 128, 256]), [15, 18, 21]),  # Detection head
+            
+            # Feature Pyramid Network, Maybe change size later
+            (SPPF(64, 64, k=5), 15),                #22
+            (SPPF(128, 128, k=5), 18),               #23
+            (SPPF(256, 256, k=5), 21),              #24
+            
+             # Decoder Path (Reverse of Second Backbone)
+            (nn.Upsample(scale_factor=2, mode="nearest"), 24),  # 25
+            (Concat(1), [-1, 20]),                    # 26: Connect with P4 features
+            (C2f(384, 128, n=2), -1),                # 27
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 28
+            (Concat(1), [-1, 23]),                    # 29: Connect with P3 features
+            (C2f(192, 64, n=2), -1),                 # 30
+            
+            # Middle Bridge (Reverse Backbone to First Backbone)
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 31
+            (Concat(1), [-1, 26]),                     # 32: Connect with first backbone P4
+            (C2f(192, 128, n=2), -1),                # 33
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 34
+            (Concat(1), [-1, 30]),                     # 35: Connect with first backbone P3
+            (C2f(192, 64, n=2), -1),                 # 36
+            
+            # Final Decoder (Reverse of First Backbone)
+            (SPPF(256, 256, k=5), -1),  # 37
+            (C2f(256, 256, n=1, shortcut=True), -1),                     # 38: Connect with P2 features
+            (Conv(256, 128, 3, 2), -1),                  # 39
+            (C2f(128, 128, n=2, shortcut=True), -1),  # 40
+            (Conv(128, 64, 3, 2), -1),                     # 41: Connect with P1 features
+            (C2f(64, 64, n=2, shortcut=True), -1),                  # 42
+            (Conv(64, 32, 3, 2), -1),  # 43
+            (C2f(32, 32, n=1, shortcut=True), -1),                     # 44: Connect with input features
+            (Conv(32, 16, 3, 2), -1),                  # 45
+            
+            # Final Output Convolution
+            (Conv(16, ch, 1), -1),                   # 46: Output with same channels as input
+            
         ]
 
-
-        f = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,[-1,6],-1,-1,[-1,4],-1,-1,[-1,12],-1,-1,[-1,9],-1,[15, 18, 21]]
-        for i in range(len(modules)):
-            m = modules[i]
-            m.i, m.f= i, f[i]
+        for i, (m, f) in enumerate(module_config):
+            m.i, m.f = i, f
             
-        self.model = nn.Sequential(*modules)
+        self.model = nn.Sequential(*[module for module,_ in module_config])
             
     
 
@@ -539,6 +577,7 @@ if __name__ == "__main__":
     # print(config)
     model = YOLOv8()
     model.load_checkpoint("yolov8n.pt")
+    
     
     # print(model)
     

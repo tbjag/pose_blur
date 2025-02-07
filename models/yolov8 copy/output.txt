@@ -1,2 +1,0 @@
-Falsetorch.Size([1, 84, 8400]) [[torch.Size([1, 144, 80, 80]), torch.Size([1, 144, 40, 40]), torch.Size([1, 144, 20, 20])]]
-y is [torch.Size([1, 64, 80, 80]), torch.Size([1, 128, 40, 40]), torch.Size([1, 256, 20, 20]), torch.Size([1, 128, 40, 40]), torch.Size([1, 64, 80, 80]), torch.Size([1, 128, 40, 40]), torch.Size([1, 256, 20, 20])]
