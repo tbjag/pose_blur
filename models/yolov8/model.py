@@ -57,8 +57,10 @@ class YOLOv8Structure(nn.Module):
             nn.Upsample(scale_factor=2, mode="nearest"),
             Concat(1),
             C2f(192, 64, n=1),                # Changed n=3 to n=1
+            
             Conv(64, 64, 3, 2),
             Concat(1),
+            
             C2f(192, 128, n=1),               # Changed n=3 to n=1
             Conv(128, 128, 3, 2),
             Concat(1),
@@ -411,6 +413,7 @@ class YOLOv8(nn.Module):
     
     def postprocess(self, preds, img, orig_imgs,img_path):
         """Post-processes predictions and returns a list of Results objects."""
+        print(preds[0].shape,[i.shape for i in preds[1]])
         preds = ops.non_max_suppression(
             preds
             # self.args.conf,

@@ -63,47 +63,35 @@ class YOLOv8Structure(nn.Module):
             
             # Second Backbone (Mirror)
             (Conv(64, 64, 3, 2), -1),                # 16: P3/8
-            (C2f(64, 64, n=2, shortcut=True), -1),   # 17
-            (Conv(64, 128, 3, 2), -1),               # 18: P4/16
-            (C2f(128, 128, n=2, shortcut=True), -1), # 19
-            (Conv(128, 256, 3, 2), -1),              # 20: P5/32
-            (C2f(256, 256, n=1, shortcut=True), -1), # 21
-            # (Detect(nc, [64, 128, 256]), [15, 18, 21]),  # Detection head
+            (Concat(1), [-1,12]),   # 17 
+            (C2f(192, 128, n=1), -1), # 18
+            (Conv(128, 128, 3, 2), -1),              # 19: P5/32
+            (Concat(1), [-1,9]),                     #20
+            (C2f(384, 256, n=1), -1),                # 21
+            (Detect(nc, [64, 128, 256]), [15, 18, 21]),  #  22 Detection head
             
             # Feature Pyramid Network, Maybe change size later
-            (SPPF(64, 64, k=5), 15),                #22
-            (SPPF(128, 128, k=5), 18),               #23
-            (SPPF(256, 256, k=5), 21),              #24
+            (SPPF(64, 64, k=5), 15),                #23
+            (SPPF(128, 128, k=5), 18),               #24
+            (SPPF(256, 256, k=5), 21),              #25
             
              # Decoder Path (Reverse of Second Backbone)
-            (nn.Upsample(scale_factor=2, mode="nearest"), 24),  # 25
-            (Concat(1), [-1, 20]),                    # 26: Connect with P4 features
-            (C2f(384, 128, n=2), -1),                # 27
-            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 28
-            (Concat(1), [-1, 23]),                    # 29: Connect with P3 features
-            (C2f(192, 64, n=2), -1),                 # 30
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 26
+            (Concat(1), [-1, 24]),                    # 27: Connect with P4 features
+            (C2f(384, 256, n=2), -1),                # 28
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 29
+            (Concat(1), [-1, 23]),                    # 30: Connect with P3 features
+            
             
             # Middle Bridge (Reverse Backbone to First Backbone)
-            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 31
-            (Concat(1), [-1, 26]),                     # 32: Connect with first backbone P4
-            (C2f(192, 128, n=2), -1),                # 33
-            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 34
-            (Concat(1), [-1, 30]),                     # 35: Connect with first backbone P3
-            (C2f(192, 64, n=2), -1),                 # 36
-            
-            # Final Decoder (Reverse of First Backbone)
-            (SPPF(256, 256, k=5), -1),  # 37
-            (C2f(256, 256, n=1, shortcut=True), -1),                     # 38: Connect with P2 features
-            (Conv(256, 128, 3, 2), -1),                  # 39
-            (C2f(128, 128, n=2, shortcut=True), -1),  # 40
-            (Conv(128, 64, 3, 2), -1),                     # 41: Connect with P1 features
-            (C2f(64, 64, n=2, shortcut=True), -1),                  # 42
-            (Conv(64, 32, 3, 2), -1),  # 43
-            (C2f(32, 32, n=1, shortcut=True), -1),                     # 44: Connect with input features
-            (Conv(32, 16, 3, 2), -1),                  # 45
-            
-            # Final Output Convolution
-            (Conv(16, ch, 1), -1),                   # 46: Output with same channels as input
+            (C2f(320, 128, n=2), -1),                 # 31
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 32
+            (Concat(1), [-1, 2]),                     # 33: Connect with first backbone P4
+            (C2f(160, 48, n=2), -1),                # 34
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 35
+            (C2f(48, 3, n=2), -1),                # 36
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),                # 37
+
             
         ]
 
@@ -154,13 +142,13 @@ class YOLOv8(nn.Module):
             
         # self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
         self.model = YOLOv8Structure().model
-        self.save = [4, 6, 9, 12, 15, 18, 21]
+        self.save = [2, 4, 6, 9, 12, 15, 18, 21,23,24]
         # self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
         self.names = COCO_CLASSES
         # self.inplace = self.yaml.get("inplace", True)
         self.inplace = True
         self.end2end = getattr(self.model[-1], "end2end", False)
-        m = self.model[-1]  # Detect()
+        m = self.model[22]  # Detect()
         m.stride = torch.tensor([ 8., 16., 32.])# forward
         self.stride = m.stride
         m.bias_init()  # only run once
@@ -222,35 +210,42 @@ class YOLOv8(nn.Module):
             (torch.Tensor): The last output of the model.
         """
         # print(f"testing my input predict once{x.shape}")
-            
+        objects = None
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
-            with open("model_weights.txt", "a+") as f:
-                f.write(f"\nLayer: {type(m).__name__}\n")
-                total_params = 0
+            # with open("model_weights.txt", "a+") as f:
+            #     f.write(f"\nLayer: {type(m).__name__}\n")
+            #     total_params = 0
                 
-                # Get state dict
-                for name, param in m.state_dict().items():
-                    f.write(f"\nParameter: {name}\n")
-                    f.write(f"Shape: {param.shape}\n")
-                    f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
-                    total_params += param.numel()
+            #     # Get state dict
+            #     for name, param in m.state_dict().items():
+            #         f.write(f"\nParameter: {name}\n")
+            #         f.write(f"Shape: {param.shape}\n")
+            #         f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
+            #         total_params += param.numel()
                     
-                f.write(f"\nTotal parameters: {total_params:,}\n")
-                f.write("-" * 80 + "\n")
-                # if type(x) not in [list,tuple]:
-                #     f.write(f"{x.shape}\n")
-                # else:
-                #     f.write(f"{m.end2end}")
-                #     f.write(f"{x[0].shape} [{[i.shape for i in x[1]]}]\n")
-                # f.write(f"y is {[i.shape for i in y if i is not None]}\n")
-            # with open("myyolem.txt", "a+") as f:
-            #     f.write(f"{type(m)} {m.f}\n")
-            #     f.write(f"{m}")
+            #     f.write(f"\nTotal parameters: {total_params:,}\n")
+            #     f.write("-" * 80 + "\n")
+               
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
+            # print(type(m), m.i)
+            
+            # if type(x) is list:
+            #     # print(y)
+            #     print([i.shape for i in x])
+            # else:
+            #     print(x.shape)
+                
+            if type(m) is Detect:
+                objects = m(x)
+                
+                # print('Ran')
+                y.append(x if m.i in self.save else None)  # save output
+                continue
+            
             x = m(x)  # run  
             y.append(x if m.i in self.save else None)  # save output
             
@@ -260,8 +255,7 @@ class YOLOv8(nn.Module):
                 embeddings.append(nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1))  # flatten
                 if m.i == max(embed):
                     return torch.unbind(torch.cat(embeddings, 1), dim=0)
-        # print(f"testing my output predict once {[type(i) for i in x]}")
-        return x
+        return (x, objects)
 
     def _predict_augment(self, x):
         """Perform augmentations on input image x and return augmented inference and train outputs."""
@@ -278,8 +272,6 @@ class YOLOv8(nn.Module):
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
-        # for i, tensor in enumerate(y):
-        #     print(f"Tensor {i} shape: {tensor.shape}")
         return torch.cat(y, -1), None  # augmented inference, train
 
     @staticmethod
@@ -304,7 +296,7 @@ class YOLOv8(nn.Module):
         y[-1] = y[-1][..., i:]  # small
         return y
     
-    def load_checkpoint(self, checkpoint_path, device='cpu', verbose=True):
+    def load_checkpoint(self, checkpoint_path, device='cpu', verbose=False):
         """Load and transfer weights from checkpoint"""
         try:
             # 1. Load checkpoint
@@ -326,7 +318,7 @@ class YOLOv8(nn.Module):
             with open("test_model_weights.txt","w+") as f:
                 f.write(f"{new_state_dict.items()}")
             # 4. Load weights
-            missing, unexpected = self.load_state_dict(new_state_dict, strict=True,assign=True)
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
@@ -449,6 +441,7 @@ class YOLOv8(nn.Module):
     
     def postprocess(self, preds, img, orig_imgs,img_path):
         """Post-processes predictions and returns a list of Results objects."""
+        print(preds[0].shape,[i.shape for i in preds[1]])
         preds = ops.non_max_suppression(
             preds
             # self.args.conf,
@@ -458,8 +451,6 @@ class YOLOv8(nn.Module):
             # classes=self.args.classes,
         )
         
-        # print(f"print post preds {[i.shape for i in preds]}")
-
         if not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
 
@@ -472,7 +463,7 @@ class YOLOv8(nn.Module):
     def inference(self, im0s,img_path):
         # Check if save_dir/ label file exists
         # Warmup model
-        model.model[-1].training = False
+        model.model[22].training = False
         profilers = (
             ops.Profile(device=self.device),
             ops.Profile(device=self.device),
@@ -484,7 +475,9 @@ class YOLOv8(nn.Module):
 
         # Inference
         with profilers[1]:
-            preds = self.predict(im)
+            new_image, preds = self.predict(im)
+            print(type(new_image), new_image.shape)
+            
             # with open("out.txt", "w+") as f:
             #     f.write(f"{preds}")
             # print(f"checking output after inference {preds[0].shape} {[i.shape for i in preds[1]]}")
@@ -504,7 +497,7 @@ class YOLOv8(nn.Module):
         #     }
             
 
-        return self.results
+        return new_image, self.results
 
 
 
@@ -559,6 +552,7 @@ def compare_models(model1, model2, threshold=1e-6):
 if __name__ == "__main__":
     from PIL import Image
     import torchvision.transforms as transforms
+    import matplotlib.pyplot as plt
 
     # Load the image
     image_path = 'original.jpg'
@@ -597,9 +591,23 @@ if __name__ == "__main__":
     for result in output:
         im = result.plot(show=True)
     
-    results = model.inference(x, image_path)
+    new_image, results = model.inference(x, image_path)
     print(results[0].boxes)
     for result in results:
         im = result.plot(show=True)
+
+    plt.figure(1, (5, 5))
+    if isinstance(new_image, torch.Tensor):
+        im2 = new_image.detach().numpy()
+    im2 = im2[0,0,:,:]
+    plt.imshow(im2)
+    plt.title('Custom Image')
+    plt.axis('off')
+    
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+    
+    
     
     
