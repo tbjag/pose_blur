@@ -146,19 +146,19 @@ class BaseModel(nn.Module):
 
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
-            with open("yolo_model_weights.txt", "a+") as f:
-                f.write(f"\nLayer: {type(m).__name__}\n")
-                total_params = 0
+            # with open("yolo_model_weights.txt", "a+") as f:
+            #     f.write(f"\nLayer: {type(m).__name__}\n")
+            #     total_params = 0
                 
-                # Get state dict
-                for name, param in m.state_dict().items():
-                    f.write(f"\nParameter: {name}\n")
-                    f.write(f"Shape: {param.shape}\n")
-                    f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
-                    total_params += param.numel()
+            #     # Get state dict
+            #     for name, param in m.state_dict().items():
+            #         f.write(f"\nParameter: {name}\n")
+            #         f.write(f"Shape: {param.shape}\n")
+            #         f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
+            #         total_params += param.numel()
                     
-                f.write(f"\nTotal parameters: {total_params:,}\n")
-                f.write("-" * 80 + "\n")
+            #     f.write(f"\nTotal parameters: {total_params:,}\n")
+            #     f.write("-" * 80 + "\n")
                 # if type(x) not in [list,tuple]:
                 #     f.write(f"{x.shape}\n")
                 # else:

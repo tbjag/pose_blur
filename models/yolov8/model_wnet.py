@@ -315,8 +315,8 @@ class YOLOv8(nn.Module):
                 new_key = f'model.{new_key}'
                 new_state_dict[new_key] = v.float()
 
-            with open("test_model_weights.txt","w+") as f:
-                f.write(f"{new_state_dict.items()}")
+            # with open("test_model_weights.txt","w+") as f:
+            #     f.write(f"{new_state_dict.items()}")
             # 4. Load weights
             missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
             
@@ -583,29 +583,50 @@ if __name__ == "__main__":
     # with open("yolo_struct.txt", "w") as f:
     #     f.write(str(struct.model))
     
-    comparison = compare_models(model, test_model.model)
+    # comparison = compare_models(model, test_model.model)
  
     model.fuse()
     output = test_model(x, augment = False)
-    print(output[0].boxes)
-    for result in output:
-        im = result.plot(show=True)
+    # print(output[0].boxes)
+    # for result in output:
+    #     im = result.plot(show=True)
     
     new_image, results = model.inference(x, image_path)
-    print(results[0].boxes)
-    for result in results:
-        im = result.plot(show=True)
+    # print(results[0].boxes)
+    # for result in results:
+    #     im = result.plot(show=True)
 
-    plt.figure(1, (5, 5))
+    plt.figure(figsize=(20, 10))
+
+    plt.title('Official YOLO Detections')
+    plt.axis('off')
+
+    # Run custom model
+    print("Custom model detections:", results[0].boxes)
+    plt.subplot(1, 2, 2)
+    print(results)
+    im2 = results[0].plot()  # Remove show=True
+    if isinstance(im2, torch.Tensor):
+        im2 = im2.cpu().numpy()
+    plt.imshow(im2)
+    plt.title('Custom Model Detections')
+    plt.axis('off')
+
+    # Add a main title
+    plt.suptitle('YOLO Detection Results Comparison', fontsize=16)
+    
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
     if isinstance(new_image, torch.Tensor):
         im2 = new_image.detach().numpy()
     im2 = im2[0,0,:,:]
+    
+    print(im2.shape)
     plt.imshow(im2)
     plt.title('Custom Image')
     plt.axis('off')
     
-    # Show the plot
-    plt.tight_layout()
     plt.show()
     
     

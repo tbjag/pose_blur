@@ -189,19 +189,19 @@ class YOLOv8(nn.Module):
             
         y, dt, embeddings = [], [], []  # outputs
         for m in self.model:
-            with open("model_weights.txt", "a+") as f:
-                f.write(f"\nLayer: {type(m).__name__}\n")
-                total_params = 0
+            # with open("model_weights.txt", "a+") as f:
+            #     f.write(f"\nLayer: {type(m).__name__}\n")
+            #     total_params = 0
                 
-                # Get state dict
-                for name, param in m.state_dict().items():
-                    f.write(f"\nParameter: {name}\n")
-                    f.write(f"Shape: {param.shape}\n")
-                    f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
-                    total_params += param.numel()
+            #     # Get state dict
+            #     for name, param in m.state_dict().items():
+            #         f.write(f"\nParameter: {name}\n")
+            #         f.write(f"Shape: {param.shape}\n")
+            #         f.write(f"Values:\n{param.detach().cpu().numpy()}\n")
+            #         total_params += param.numel()
                     
-                f.write(f"\nTotal parameters: {total_params:,}\n")
-                f.write("-" * 80 + "\n")
+            #     f.write(f"\nTotal parameters: {total_params:,}\n")
+            #     f.write("-" * 80 + "\n")
                 # if type(x) not in [list,tuple]:
                 #     f.write(f"{x.shape}\n")
                 # else:
@@ -287,8 +287,8 @@ class YOLOv8(nn.Module):
                 new_key = f'model.{new_key}'
                 new_state_dict[new_key] = v.float()
 
-            with open("test_model_weights.txt","w+") as f:
-                f.write(f"{new_state_dict.items()}")
+            # with open("test_model_weights.txt","w+") as f:
+            #     f.write(f"{new_state_dict.items()}")
             # 4. Load weights
             missing, unexpected = self.load_state_dict(new_state_dict, strict=True,assign=True)
             
@@ -553,7 +553,7 @@ if __name__ == "__main__":
     # with open("yolo_struct.txt", "w") as f:
     #     f.write(str(struct.model))
     
-    comparison = compare_models(model, test_model.model)
+    # comparison = compare_models(model, test_model.model)
  
     model.fuse()
     output = test_model(x, augment = False)
