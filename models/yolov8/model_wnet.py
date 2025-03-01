@@ -20,6 +20,8 @@ from ultralytics.utils.torch_utils import (
 from pathlib import Path
 import re
 
+__all__ = ("WNet",)
+
 #To fix loading model issue make self.legacy true in Head module
 
 #TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
@@ -34,9 +36,9 @@ def intersect_dicts(da, db, exclude=()):
     """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
-class YOLOv8Structure(nn.Module):
+class WNetStructure(nn.Module):
     def __init__(self, nc=80, ch=3):
-        super(YOLOv8Structure, self).__init__()
+        super(WNetStructure, self).__init__()
         self.nc = nc
         
         # Define backbone with layer connections
@@ -127,21 +129,21 @@ COCO_CLASSES = {
 
 
     
-class YOLOv8(nn.Module):
-    def __init__(self, config="yolov8.yaml", ch=3, nc=None, verbose=True):
-        super(YOLOv8, self).__init__()
+class WNet(nn.Module):
+    def __init__(self):
+        super(WNet, self).__init__()
         self.nc = 80
         # self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ch = self.yaml["ch"] = self.yaml.get("ch", ch)
-        ch = 3
+        # ch = 3
         
         # if nc and nc != self.yaml["nc"]:
         #     print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
         #     self.yaml["nc"] = nc  # override YAML value
             
         # self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
-        self.model = YOLOv8Structure().model
+        self.model = WNetStructure().model
         self.save = [2, 4, 6, 9, 12, 15, 18, 21,23,24]
         # self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
         self.names = COCO_CLASSES
@@ -318,7 +320,7 @@ class YOLOv8(nn.Module):
             # with open("test_model_weights.txt","w+") as f:
             #     f.write(f"{new_state_dict.items()}")
             # 4. Load weights
-            missing, unexpected = self.load_state_dict(new_state_dict, strict=False,assign=True)
+            missing, unexpected = self.load_state_dict(new_state_dict, strict=False)
             
             if verbose:
                 print(f'Loaded checkpoint: {checkpoint_path}')
@@ -412,7 +414,7 @@ class YOLOv8(nn.Module):
             self.criterion = self.init_criterion()
 
         preds = self.forward(batch["img"]) if preds is None else preds
-        return self.criterion(preds, batch)
+        return preds[0],self.criterion(preds[1], batch)
     
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
@@ -569,7 +571,7 @@ if __name__ == "__main__":
     
     
     # print(config)
-    model = YOLOv8()
+    model = WNet()
     model.load_checkpoint("yolov8n.pt")
     
     
@@ -587,37 +589,23 @@ if __name__ == "__main__":
  
     model.fuse()
     output = test_model(x, augment = False)
+    print('yolo')
     # print(output[0].boxes)
-    # for result in output:
-    #     im = result.plot(show=True)
+    for result in output:
+        im = result.plot(show=True,boxes = False)
     
     new_image, results = model.inference(x, image_path)
+    # print("wnet")
     # print(results[0].boxes)
-    # for result in results:
-    #     im = result.plot(show=True)
+    for result in results:
+        im = result.plot(show=True,boxes = False)
 
     plt.figure(figsize=(20, 10))
 
     plt.title('Official YOLO Detections')
     plt.axis('off')
-
-    # Run custom model
-    print("Custom model detections:", results[0].boxes)
-    plt.subplot(1, 2, 2)
-    print(results)
-    im2 = results[0].plot()  # Remove show=True
-    if isinstance(im2, torch.Tensor):
-        im2 = im2.cpu().numpy()
-    plt.imshow(im2)
-    plt.title('Custom Model Detections')
-    plt.axis('off')
-
-    # Add a main title
-    plt.suptitle('YOLO Detection Results Comparison', fontsize=16)
     
-    # Show the plot
-    plt.tight_layout()
-    plt.show()
+    
     if isinstance(new_image, torch.Tensor):
         im2 = new_image.detach().numpy()
     im2 = im2[0,0,:,:]

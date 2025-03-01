@@ -39,7 +39,7 @@ class Pix2PixfftModel(BaseModel):
 
         return parser
 
-    def __init__(self, opt):
+    def __init__(self, opt, path = None):
         """Initialize the pix2pix class.
 
         Parameters:
@@ -47,7 +47,7 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake']
+        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake', 'OD_loss']
         #self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
@@ -59,7 +59,10 @@ class Pix2PixfftModel(BaseModel):
         # define networks (both generator and discriminator)
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-
+        if opt.netG == 'wnet':
+            self.netG.load_checkpoint(path)
+            
+        self.model_name = opt.netG
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
             self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
                                           opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
@@ -91,7 +94,12 @@ class Pix2PixfftModel(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B = self.netG(self.real_A)  # G(A)
+        if self.model_name == 'wnet':
+            self.fake_B, self.od_loss= self.netG(self.real_A)  # G(A)
+            
+        else:
+            
+            self.fake_B = self.netG(self.real_A)  # G(A)
 
     def fft_image(self, img):
         fft_result = torch.fft.fft2(img)
@@ -149,6 +157,10 @@ class Pix2PixfftModel(BaseModel):
 
         #combine all losses, including the freq loss
         self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
+        
+        if self.model_name == 'wnet':
+            self.loss_G += self.od_loss
+
         self.loss_G.backward()
 
     def optimize_parameters(self):
