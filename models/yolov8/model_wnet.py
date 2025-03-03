@@ -1,3 +1,4 @@
+from fileinput import filename
 import torch
 import torch.nn as nn
 from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW, yaml_model_load
@@ -20,7 +21,7 @@ from ultralytics.utils.torch_utils import (
 from pathlib import Path
 import re
 
-__all__ = ("WNet",)
+__all__ = ("WNet","WNetStructure")
 
 #To fix loading model issue make self.legacy true in Head module
 
@@ -598,7 +599,8 @@ if __name__ == "__main__":
     # print("wnet")
     # print(results[0].boxes)
     for result in results:
-        im = result.plot(show=True,boxes = False)
+        im = result.plot(show=True,boxes = False )
+        #save=True, filename="model_output_detect.jpg"
 
     plt.figure(figsize=(20, 10))
 
@@ -614,7 +616,7 @@ if __name__ == "__main__":
     plt.imshow(im2)
     plt.title('Custom Image')
     plt.axis('off')
-    
+    plt.savefig("output_image.png")
     plt.show()
     
     
