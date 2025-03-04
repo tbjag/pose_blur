@@ -77,9 +77,9 @@ class v8DetectionLoss:
     def __init__(self, model, tal_topk=10):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
         device = next(model.parameters()).device  # get model device
-        h = model.args  # hyperparameters
+        h = {"box":7.5,"cls":0.5,"dfl":1.5}
 
-        m = model.model[-1]  # Detect() module
+        m = model.model[22]  # Detect() module
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
         self.hyp = h
         self.stride = m.stride  # model strides
@@ -171,8 +171,8 @@ class v8DetectionLoss:
                 pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
             )
 
-        loss[0] *= self.hyp.box  # box gain
-        loss[1] *= self.hyp.cls  # cls gain
-        loss[2] *= self.hyp.dfl  # dfl gain
+        loss[0] *= self.hyp["box"]  # box gain
+        loss[1] *= self.hyp["cls"]  # cls gain
+        loss[2] *= self.hyp["dfl"]  # dfl gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)  
