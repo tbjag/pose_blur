@@ -1,9 +1,9 @@
 import torch
 from torch import nn
-from tal import TaskAlignedAssigner, bbox2dist
-from metrics import bbox_iou
+from yolov8.tal import TaskAlignedAssigner, bbox2dist
+from yolov8.metrics import bbox_iou
 import torch.nn.functional as F
-from modules import dist2bbox, make_anchors,xywh2xyxy
+from yolov8.modules import dist2bbox, make_anchors,xywh2xyxy
 
 class DFLoss(nn.Module):
     """Criterion class for computing DFL losses during training."""

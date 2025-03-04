@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from metrics import bbox_iou
+from yolov8.metrics import bbox_iou
 
 def bbox2dist(anchor_points, bbox, reg_max):
     """Transform bbox(xyxy) to dist(ltrb)."""

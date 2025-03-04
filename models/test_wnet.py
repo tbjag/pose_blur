@@ -1,8 +1,14 @@
-from yolov8 import WNet
+import os
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+# yolov8 = importlib.import_module( "yolov8" )
+from yolov8.model_wnet import WNet
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
+
 
 # Load the image
 image_path = 'original.jpg'

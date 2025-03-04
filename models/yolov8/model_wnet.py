@@ -1,15 +1,13 @@
+"""module"""
+import os
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from yolov8.ultralytics import YOLO
 from fileinput import filename
 import torch
 import torch.nn as nn
-from modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW, yaml_model_load
-from loss import v8DetectionLoss, E2EDetectLoss
-import yaml
-from copy import deepcopy
-import numpy as np
-import ops
-from Results import Results #TODO Fix Result file to remove ultralytics code
-
-from ultralytics.utils.torch_utils import (
+from yolov8.torch_utils import (
     fuse_conv_and_bn,
     fuse_deconv_and_bn,
     initialize_weights,
@@ -18,6 +16,15 @@ from ultralytics.utils.torch_utils import (
     scale_img,
     time_sync,
 )
+from yolov8.modules import Segment,Conv,Pose,OBB, C2f, SPPF, Concat, Detect, parse_model,initialize_weights, feature_visualization, scale_img, Conv2, DWConv, ConvTranspose, RepConv, RepVGGDW, yaml_model_load
+from yolov8.loss import v8DetectionLoss, E2EDetectLoss
+import yaml
+from copy import deepcopy
+import numpy as np
+import yolov8.ops as ops
+from yolov8.Results import Results #TODO Fix Result file to remove ultralytics code
+
+
 from pathlib import Path
 import re
 
@@ -303,7 +310,7 @@ class WNet(nn.Module):
         """Load and transfer weights from checkpoint"""
         try:
             # 1. Load checkpoint
-            ckpt = torch.load(checkpoint_path, map_location=device)
+            ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
             
             # 2. Extract state dict
             if isinstance(ckpt, dict):
@@ -466,7 +473,7 @@ class WNet(nn.Module):
     def inference(self, im0s,img_path):
         # Check if save_dir/ label file exists
         # Warmup model
-        model.model[22].training = False
+        self.model[22].training = False
         profilers = (
             ops.Profile(device=self.device),
             ops.Profile(device=self.device),
@@ -591,13 +598,13 @@ if __name__ == "__main__":
     model.fuse()
     output = test_model(x, augment = False)
     print('yolo')
-    # print(output[0].boxes)
+    print(output[0].boxes)
     for result in output:
         im = result.plot(show=True,boxes = False)
     
     new_image, results = model.inference(x, image_path)
-    # print("wnet")
-    # print(results[0].boxes)
+    print("wnet")
+    print(results[0].boxes)
     for result in results:
         im = result.plot(show=True,boxes = False )
         #save=True, filename="model_output_detect.jpg"

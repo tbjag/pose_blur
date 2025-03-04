@@ -3,7 +3,9 @@
 __version__ = "8.3.34"
 
 import os
-
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
 # Set ENV variables (place before imports)
 if not os.environ.get("OMP_NUM_THREADS"):
     os.environ["OMP_NUM_THREADS"] = "1"  # default for reduced CPU utilization during training

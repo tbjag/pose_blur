@@ -47,8 +47,8 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake', 'OD_loss']
-        #self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
+        # self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake', 'OD_loss']
+        self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
@@ -60,7 +60,8 @@ class Pix2PixfftModel(BaseModel):
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         if opt.netG == 'wnet':
-            self.netG.load_checkpoint(path)
+            path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
+            self.netG.module.load_checkpoint(path)
             
         self.model_name = opt.netG
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
@@ -158,8 +159,10 @@ class Pix2PixfftModel(BaseModel):
         #combine all losses, including the freq loss
         self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
         
-        if self.model_name == 'wnet':
-            self.loss_G += self.od_loss
+        # if self.model_name == 'wnet':
+        #     print(self.loss_G.shape)
+        #     print(len(self.od_loss))
+            # self.loss_G += self.od_loss
 
         self.loss_G.backward()
 

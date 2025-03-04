@@ -3,7 +3,11 @@ import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
-from .yolov8 import WNet
+import os
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from .yolov8.model_wnet import WNet
 
 
 ###############################################################################
