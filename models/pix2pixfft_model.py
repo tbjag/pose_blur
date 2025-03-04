@@ -47,8 +47,8 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        # self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake', 'OD_loss']
-        self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
+        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake']
+        # self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
@@ -62,6 +62,11 @@ class Pix2PixfftModel(BaseModel):
         if opt.netG == 'wnet':
             path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
             self.netG.module.load_checkpoint(path)
+            self.optimizer_W_Net = self.build_optimizer(
+                    model=self.netG.module,
+                )
+            self.optimizers.append(self.optimizer_W_Net)
+
             
         self.model_name = opt.netG
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
@@ -76,8 +81,63 @@ class Pix2PixfftModel(BaseModel):
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
+            
+    def build_optimizer(self, model, name="Adam", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
+        """
+        Constructs an optimizer for the given model, based on the specified optimizer name, learning rate, momentum,
+        weight decay, and number of iterations.
+
+        Args:
+            model (torch.nn.Module): The model for which to build an optimizer.
+            name (str, optional): The name of the optimizer to use. If 'auto', the optimizer is selected
+                based on the number of iterations. Default: 'auto'.
+            lr (float, optional): The learning rate for the optimizer. Default: 0.001.
+            momentum (float, optional): The momentum factor for the optimizer. Default: 0.9.
+            decay (float, optional): The weight decay for the optimizer. Default: 1e-5.
+            iterations (float, optional): The number of iterations, which determines the optimizer if
+                name is 'auto'. Default: 1e5.
+
+        Returns:
+            (torch.optim.Optimizer): The constructed optimizer.
+        """
+        g = [], [], []  # optimizer parameter groups
+        bn = tuple(v for k, v in torch.nn.__dict__.items() if "Norm" in k)  # normalization layers, i.e. BatchNorm2d()
+        if name == "auto":
+            nc = getattr(model, "nc", 10)  # number of classes
+            lr_fit = round(0.002 * 5 / (4 + nc), 6)  # lr0 fit equation to 6 decimal places
+            name, lr, momentum = ("SGD", 0.01, 0.9) if iterations > 10000 else ("AdamW", lr_fit, 0.9)
+            self.args.warmup_bias_lr = 0.0  # no higher than 0.01 for Adam
+
+        for module_name, module in model.named_modules():
+            for param_name, param in module.named_parameters(recurse=False):
+                fullname = f"{module_name}.{param_name}" if module_name else param_name
+                if "bias" in fullname:  # bias (no decay)
+                    g[2].append(param)
+                elif isinstance(module, bn):  # weight (no decay)
+                    g[1].append(param)
+                else:  # weight (with decay)
+                    g[0].append(param)
+
+        optimizers = {"Adam", "Adamax", "AdamW", "NAdam", "RAdam", "RMSProp", "SGD", "auto"}
+        name = {x.lower(): x for x in optimizers}.get(name.lower())
+        if name in {"Adam", "Adamax", "AdamW", "NAdam", "RAdam"}:
+            optimizer = getattr(torch.optim, name, torch.optim.Adam)(g[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+        elif name == "RMSProp":
+            optimizer = torch.optim.RMSprop(g[2], lr=lr, momentum=momentum)
+        elif name == "SGD":
+            optimizer = torch.optim.SGD(g[2], lr=lr, momentum=momentum, nesterov=True)
+        else:
+            raise NotImplementedError(
+                f"Optimizer '{name}' not found in list of available optimizers {optimizers}. "
+                "Request support for addition optimizers at https://github.com/ultralytics/ultralytics."
+            )
+
+        optimizer.add_param_group({"params": g[0], "weight_decay": decay})  # add g0 with weight_decay
+        optimizer.add_param_group({"params": g[1], "weight_decay": 0.0})  # add g1 (BatchNorm2d weights)
+        return optimizer
 
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -96,7 +156,7 @@ class Pix2PixfftModel(BaseModel):
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         if self.model_name == 'wnet':
-            self.fake_B, self.od_loss= self.netG(self.real_A)  # G(A)
+            self.fake_B, self.loss_OD= self.netG(self.real_A)  # G(A)
             
         else:
             
@@ -160,8 +220,8 @@ class Pix2PixfftModel(BaseModel):
         self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
         
         # if self.model_name == 'wnet':
-        #     print(self.loss_G.shape)
-        #     print(len(self.od_loss))
+        #     print(self.loss_G)
+            # print([i.shape for i in self.od_loss])
             # self.loss_G += self.od_loss
 
         self.loss_G.backward()
@@ -178,3 +238,8 @@ class Pix2PixfftModel(BaseModel):
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # update G's weights
+        if self.model_name == 'wnet':
+            self.optimizer_W_Net.zero_grad()        
+            self.loss_OD.backward()           
+            self.optimizer_W_Net.step()             
+    
