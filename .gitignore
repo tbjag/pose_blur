@@ -4,6 +4,7 @@ data/mnist_all/
 data/mnist_blur_pairs/
 data/MNIST/*
 
+wandb/
 checkpoints/
 # Ignore any other temporary or cache files
 *.pyc

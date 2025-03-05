@@ -107,6 +107,7 @@ class Pix2PixfftModel(BaseModel):
             # print(torch.tensor(self.bounding_boxes))
             input = {"img":self.real_A,"batch_idx":torch.tensor([0]*len(self.bounding_boxes)),"cls":torch.tensor([0]*len(self.bounding_boxes)), "bboxes":torch.tensor(self.bounding_boxes)}
             self.fake_B, self.loss_OD= self.netG(input)  # G(A)
+            # 
             self.loss_OD = self.loss_OD[0]
         else:
             

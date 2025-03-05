@@ -424,7 +424,7 @@ class WNet(nn.Module):
             self.criterion = self.init_criterion()
 
         preds = self.forward(batch["img"]) if preds is None else preds
-        return preds[0],self.criterion(preds[1], batch)
+        return preds[0], self.criterion(preds[1], batch)
     
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
