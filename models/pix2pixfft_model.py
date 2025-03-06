@@ -47,7 +47,7 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake', 'OD']
+        self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake', 'OD']
         # self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
@@ -62,6 +62,7 @@ class Pix2PixfftModel(BaseModel):
         if opt.netG == 'wnet':
             path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
             self.netG.module.load_checkpoint(path)
+            # self.netG.module.fuse()
             # self.optimizer_W_Net = self.build_optimizer(
             #         model=self.netG.module,
             #     )
@@ -96,6 +97,7 @@ class Pix2PixfftModel(BaseModel):
         """
         AtoB = self.opt.direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
+        # print(self.real_A)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.bounding_boxes = input['bbox'] #Check bounding boxes for FFT
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
@@ -105,9 +107,9 @@ class Pix2PixfftModel(BaseModel):
         if self.model_name == 'wnet':
             # print(self.bounding_boxes)
             # print(torch.tensor(self.bounding_boxes))
-            input = {"img":self.real_A,"batch_idx":torch.tensor([0]*len(self.bounding_boxes)),"cls":torch.tensor([0]*len(self.bounding_boxes)), "bboxes":torch.tensor(self.bounding_boxes)}
+            input = {"img":self.real_A,"batch_idx":torch.tensor([0. for i in range(len(self.bounding_boxes))]),"cls":torch.tensor([[1.0]*len(self.bounding_boxes)]), "bboxes":torch.tensor(self.bounding_boxes)}
             self.fake_B, self.loss_OD= self.netG(input)  # G(A)
-            # 
+            # print(self.loss_OD)
             self.loss_OD = self.loss_OD[0]
         else:
             
@@ -162,13 +164,13 @@ class Pix2PixfftModel(BaseModel):
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
 
-        self.loss_G_freq = self.criterionFreq(self.real_B, self.fake_B, self.bounding_boxes) * self.opt.lambda_freq
+        # self.loss_G_freq = self.criterionFreq(self.real_B, self.fake_B, self.bounding_boxes) * self.opt.lambda_freq
         
         # combine loss and calculate gradients
         #self.loss_G = self.loss_G_GAN + self.loss_G_L1
 
         #combine all losses, including the freq loss
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
+        self.loss_G = self.loss_G_GAN + self.loss_G_L1 #+ self.loss_G_freq
         
         if self.model_name == 'wnet':
             # print(self.loss_G)
@@ -189,3 +191,11 @@ class Pix2PixfftModel(BaseModel):
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # update G's weights
+        
+    def print_detections(self):
+        new_image, results = self.netG.module.inference(self.real_A, self.image_paths)
+        print(self.image_paths)
+        print(results[0].boxes)
+        for result in results:
+            im = result.plot(show=True,boxes = False,
+            save=True, filename="model_output_detect.jpg")

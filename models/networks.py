@@ -161,7 +161,7 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     elif netG == 'unet_256':
         net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'wnet':
-        net = WNet()
+        net = WNet(nc = 1)
         if len(gpu_ids) > 0:
             assert(torch.cuda.is_available())
             net.to(gpu_ids[0])
