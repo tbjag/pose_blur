@@ -1,0 +1,9 @@
+# Train the model
+path: /media/Data_2/person-search/dataset/Image/SSM
+train: images/train
+val: images/test
+ 
+# class names
+names:
+  0: person
+

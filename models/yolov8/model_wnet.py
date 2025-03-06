@@ -140,9 +140,9 @@ COCO_CLASSES = {
 
     
 class WNet(nn.Module):
-    def __init__(self):
+    def __init__(self, nc =80):
         super(WNet, self).__init__()
-        self.nc = 80
+        self.nc = nc
         # self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # ch = self.yaml["ch"] = self.yaml.get("ch", ch)
@@ -453,7 +453,7 @@ class WNet(nn.Module):
     
     def postprocess(self, preds, img, orig_imgs,img_path):
         """Post-processes predictions and returns a list of Results objects."""
-        print(preds[0].shape,[i.shape for i in preds[1]])
+        # print(preds[0].shape,[i.shape for i in preds[1]])
         preds = ops.non_max_suppression(
             preds
             # self.args.conf,
@@ -488,7 +488,7 @@ class WNet(nn.Module):
         # Inference
         with profilers[1]:
             new_image, preds = self.predict(im)
-            print(type(new_image), new_image.shape)
+            # print(type(new_image), new_image.shape)
             
             # with open("out.txt", "w+") as f:
             #     f.write(f"{preds}")
@@ -508,7 +508,7 @@ class WNet(nn.Module):
         #         "postprocess": profilers[2].dt * 1e3 / n,
         #     }
             
-
+        self.model[22].training = True
         return new_image, self.results
 
 

@@ -57,6 +57,12 @@ class TaskAlignedAssigner(nn.Module):
             fg_mask (Tensor): shape(bs, num_total_anchors)
             target_gt_idx (Tensor): shape(bs, num_total_anchors)
         """
+        # print(f"pd_scores: {type(pd_scores)},  {pd_scores.shape}")
+        # print(f"pd_bboxes: {type(pd_bboxes)},  {pd_bboxes.shape}")
+        # print(f"anc_points: {type(anc_points)},  {anc_points.shape}")
+        # print(f"gt_labels: {type(gt_labels)},  {gt_labels.shape}")
+        # print(f"gt_labels: {type(gt_bboxes)},  {gt_bboxes.shape}")
+        # print(f"gt_labels: {type(mask_gt)},  {mask_gt.shape}")
         self.bs = pd_scores.shape[0]
         self.n_max_boxes = gt_bboxes.shape[1]
         device = gt_bboxes.device
