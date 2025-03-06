@@ -111,4 +111,5 @@ if __name__ == "__main__":
 
 #python dispaly_bounding_box.py --image /media/Data_2/person-search/dataset/Image/SSM/train/s1.jpg --json /media/Data_2/person-search/dataset/Image/SSM/train/s1.json --output result.jpg
 
-## python dispaly_bounding_box.py --image /media/Data_2/person-search/dataset/Image/SSM/s1.jpg --json /media/Data_2/person-search/dataset/Image/SSM/s1.json --output result_1.jpg
+## python dispaly_bounding_box.py --image /media/Data_2/person-search/dataset/Image/SSM/s5.jpg --json /media/Data_2/person-search/dataset/cuhk_transformed/test/s5.json --output result_1.jpg
+# python dispaly_bounding_box.py --image /media/Data_2/person-search/dataset/Image/SSM/s5.jpg --json /media/Data_2/person-search/dataset/Image/SSM/s5.json --output result_1.jpg

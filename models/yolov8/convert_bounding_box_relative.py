@@ -6,7 +6,7 @@ import random
 from PIL import Image
 
 # Base directory containing images and labels
-BASE_DIR = "/media/Data_2/person-search/dataset/Image/SSM"
+BASE_DIR = "/media/Data_2/person-search/dataset/cuhk_transformed"
 CATEGORY_ID = 0
 TRAIN_RATIO = 0.7  # 70% for training, 30% for testing
 
@@ -52,8 +52,8 @@ def split_dataset():
     """Split the dataset into train and test sets"""
     # Create directories
     for split in ['train', 'test']:
-        os.makedirs(os.path.join(BASE_DIR,"images", split), exist_ok=True)
-        os.makedirs(os.path.join(BASE_DIR, "labels",split), exist_ok=True)
+        os.makedirs(os.path.join(BASE_DIR,split), exist_ok=True)
+        os.makedirs(os.path.join(BASE_DIR, split), exist_ok=True)
     
     # Get all image files from source directory
     source_imgs = glob.glob(os.path.join(BASE_DIR, "*.jpg")) + \
@@ -74,35 +74,34 @@ def split_dataset():
     for img_file in train_imgs:
         base_name = os.path.basename(img_file)
         # Copy image
-        shutil.copy2(img_file, os.path.join(BASE_DIR, "images", "train", base_name))
+        shutil.copy2(img_file, os.path.join(BASE_DIR,  "train", base_name))
         # Copy corresponding JSON if exists
         json_file = os.path.join(BASE_DIR, f"{os.path.splitext(base_name)[0]}.json")
         if os.path.exists(json_file):
-            shutil.copy2(json_file, os.path.join(BASE_DIR, "labels","train", os.path.basename(json_file)))
+            shutil.copy2(json_file, os.path.join(BASE_DIR, "train", os.path.basename(json_file)))
     
     # Process test images
     for img_file in test_imgs:
         base_name = os.path.basename(img_file)
         # Copy image
-        shutil.copy2(img_file, os.path.join(BASE_DIR, "images", "test", base_name))
+        shutil.copy2(img_file, os.path.join(BASE_DIR,  "test", base_name))
         # Copy corresponding JSON if exists
         json_file = os.path.join(BASE_DIR, f"{os.path.splitext(base_name)[0]}.json")
         if os.path.exists(json_file):
-            shutil.copy2(json_file, os.path.join(BASE_DIR, "labels","test", os.path.basename(json_file)))
+            shutil.copy2(json_file, os.path.join(BASE_DIR, "test", os.path.basename(json_file)))
     
     print("Dataset split complete!")
 
 def process_directory(subdir):
     """Process all images and corresponding JSON files in a directory"""
-    dir = os.path.join(BASE_DIR,  subdir)
+    dir = os.path.join(BASE_DIR,   subdir)
     
     print(f"Processing {subdir} directory...")
-    
+    image_dir = "/media/Data_2/person-search/dataset/Image/SSM"
     # Get all image files
-    img_files = glob.glob(os.path.join(dir, "*.jpg")) + \
-                glob.glob(os.path.join(dir, "*.jpeg")) + \
-                glob.glob(os.path.join(dir, "*.png"))
-    
+    img_files = glob.glob(os.path.join(image_dir, "*.jpg")) + \
+                glob.glob(os.path.join(image_dir, "*.jpeg")) + \
+                glob.glob(os.path.join(image_dir, "*.png"))
     for img_file in img_files:
         base_name = os.path.basename(img_file).split('.')[0]
         json_file = os.path.join(dir, f"{base_name}.json")
@@ -130,39 +129,40 @@ def process_directory(subdir):
         # Create output file
         output_file = os.path.join(dir, f"{base_name}.json")
         
-        # yolo_bboxes = []
-        # for bbox in bboxes:
-        #     yolo_bbox = convert_xyxy_to_yolo_format(bbox, img_width, img_height)
-        #     yolo_bboxes.append([
-        #         round(yolo_bbox[0], 6),
-        #         round(yolo_bbox[1], 6),
-        #         round(yolo_bbox[2], 6),
-        #         round(yolo_bbox[3], 6)
-        #     ])
+        yolo_bboxes = []
+        for bbox in bboxes:
+            yolo_bbox = convert_xyxy_to_yolo_format(bbox, img_width, img_height)
+            yolo_bboxes.append([
+                round(yolo_bbox[0], 6),
+                round(yolo_bbox[1], 6),
+                round(yolo_bbox[2], 6),
+                round(yolo_bbox[3], 6)
+            ])
         
-        # with open(output_file, 'w') as f:
-        #     json.dump(yolo_bboxes, f)
-                
-        # print(f"Processed {base_name}: {len(bboxes)} bounding boxes")
         with open(output_file, 'w') as f:
-            for bbox in bboxes:
-                yolo_bbox = convert_xyxy_to_yolo_format(bbox, img_width, img_height)
-                # f.write(f"[{yolo_bbox[0]:.6f} {yolo_bbox[1]:.6f} {yolo_bbox[2]:.6f} {yolo_bbox[3]:.6f}]\n")
-                f.write(f"{CATEGORY_ID} {yolo_bbox[0]:.6f} {yolo_bbox[1]:.6f} {yolo_bbox[2]:.6f} {yolo_bbox[3]:.6f}\n")
-        
-        os.remove(json_file)
-
+            json.dump(yolo_bboxes, f)
+                
         print(f"Processed {base_name}: {len(bboxes)} bounding boxes")
+        # try:
+        #     with open(output_file, 'w') as f:
+        #         for bbox in bboxes:
+        #             yolo_bbox = convert_xyxy_to_yolo_format(bbox, img_width, img_height)
+        #             f.write(f"{CATEGORY_ID} {yolo_bbox[0]:.6f} {yolo_bbox[1]:.6f} {yolo_bbox[2]:.6f} {yolo_bbox[3]:.6f}\n")
+            
+        #     # Delete the JSON file after successful conversion
+        #     os.remove(json_file)
+        #     print(f"Processed {base_name}: {len(bboxes)} bounding boxes - JSON file deleted")
+        # except Exception as e:
+        #     print(f"Error writing or deleting file: {e}")
 
 if __name__ == "__main__":
     # First split the dataset
     split_dataset()
     
     # # Create output directories
-    # os.makedirs(os.path.join(BASE_DIR, "labels_yolo"), exist_ok=True)
     
     # Process train and test directories
-    for subdir in ["labels/train", "labels/test"]:
+    for subdir in ["train", "test"]:
         process_directory(subdir)
     
     print("Conversion complete!")
