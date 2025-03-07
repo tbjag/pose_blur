@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
+model = YOLO("yolov8m.pt", "detect")  # load a pretrained model (recommended for training)
 
 # Train the model
-results = model.train(data="custom.yaml", epochs=3, imgsz=640, cache=True)
+print(model)

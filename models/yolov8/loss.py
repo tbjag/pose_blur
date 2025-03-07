@@ -169,18 +169,12 @@ class v8DetectionLoss:
         # Cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
         loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
-        # print(f"target scores {target_scores}")
-        # Bbox loss
-        # print(fg_mask)
-        # print(fg_mask.sum())
-        # print(pred_bboxes[fg_mask], target_bboxes[fg_mask])
+
         if fg_mask.sum():
             target_bboxes /= stride_tensor
-            ones_tensor = torch.ones_like(target_scores)
             loss[0], loss[2] = self.bbox_loss(
-                pred_distri, pred_bboxes, anchor_points, target_bboxes, ones_tensor, ones_tensor.sum(), fg_mask
+                pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores.sum(), fg_mask
             )
-            # print(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask)
 
         loss[0] *= self.hyp["box"]  # box gain
         loss[1] *= self.hyp["cls"]  # cls gain

@@ -117,6 +117,8 @@ class WNetStructure(nn.Module):
     def forward(self, x):
         return self.model(x)
     
+
+    
 COCO_CLASSES = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 
     6: 'train', 7: 'truck', 8: 'boat', 9: 'traffic light', 10: 'fire hydrant',
