@@ -1,6 +1,6 @@
 import os
 from data.base_dataset import BaseDataset, get_params, get_transform
-from data.image_folder import make_dataset, make_coco_bbox
+from data.image_folder import make_dataset, make_bbox
 from PIL import Image
 import json
 
@@ -20,7 +20,7 @@ class COCODataset(BaseDataset):
         BaseDataset.__init__(self, opt)
         self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # get the image directory
         self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # get image paths
-        self.json_paths = sorted(make_coco_bbox(self.dir_AB, opt.max_dataset_size))
+        self.json_paths = sorted(make_bbox(self.dir_AB, opt.max_dataset_size))
         assert(self.opt.load_size >= self.opt.crop_size)   # crop_size should be smaller than the size of loaded image
         self.input_nc = self.opt.output_nc if self.opt.direction == 'BtoA' else self.opt.input_nc
         self.output_nc = self.opt.input_nc if self.opt.direction == 'BtoA' else self.opt.output_nc

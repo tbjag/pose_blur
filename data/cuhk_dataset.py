@@ -1,15 +1,14 @@
 import os
 import json
-import numpy as np
-import torch
 from PIL import Image
-from data.base_dataset import BaseDataset
+from data.base_dataset import BaseDataset, get_params, get_transform
+from data.image_folder import make_dataset, make_bbox
 
 
 class CuhkDataset(BaseDataset):
     """Dataset class for the preprocessed CUHK-SYSU dataset for Pix2Pix.
 
-    This loads preprocessed image pairs (blurred + original) and bounding boxes.
+    This loads preprocessed AB images (left: blurred, right: original) and applies transformations.
     """
 
     def __init__(self, opt):
@@ -19,46 +18,60 @@ class CuhkDataset(BaseDataset):
             opt: Options object storing experiment flags.
         """
         BaseDataset.__init__(self, opt)
-        self.opt = opt
-        self.image_dir = os.path.join(opt.dataroot, "cuhk_transformed")  # Folder with preprocessed paired images
-        self.image_paths = sorted([
-            os.path.join(self.image_dir, f) for f in os.listdir(self.image_dir) if f.endswith('.png')
-        ])
+        self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # Standardized naming
+        self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # Use existing helper
+        self.json_paths = sorted(make_bbox(self.dir_AB, opt.max_dataset_size))
+
+        assert opt.load_size >= opt.crop_size, "Crop size should be smaller than load size."
+        self.input_nc = opt.output_nc if opt.direction == 'BtoA' else opt.input_nc
+        self.output_nc = opt.input_nc if opt.direction == 'BtoA' else opt.output_nc
 
     def __getitem__(self, index):
         """Return a preprocessed image pair (blurred, original) with bounding boxes."""
-        img_path = self.image_paths[index]
-        img_name = os.path.basename(img_path)
-        img_name_no_ext = os.path.splitext(img_name)[0]  # Remove extension for JSON
 
-        # Load preprocessed paired image (Blurred + Original)
-        paired_image = Image.open(img_path).convert('RGB')
+        AB_path = self.AB_paths[index]
+        AB = Image.open(AB_path).convert('RGB')
 
-        # Load bounding box annotations from JSON (if available)
-        json_path = os.path.join(self.image_dir, f"{img_name_no_ext}.json")
-        if os.path.exists(json_path):
-            with open(json_path, 'r') as f:
-                bboxes = json.load(f)
-        else:
-            bboxes = []
+        # Ensure image width is even for proper splitting
+        w, h = AB.size
+        assert w % 2 == 0, f"[ERROR] Image width {w} is not even, cannot split into A and B."
 
-        # Convert to PyTorch tensor (normalized to [0,1])
-        paired_image = torch.from_numpy(np.array(paired_image)).permute(2, 0, 1).float() / 255.0
+        # Split image into A (original) and B (blurred)
+        w2 = w // 2
+        A = AB.crop((0, 0, w2, h))
+        B = AB.crop((w2, 0, w, h))
 
-        # Split into A (blurred) and B (original)
-        C, H, W = paired_image.shape
-        W2 = W // 2
-        A = paired_image[:, :, :W2]  # Left half: blurred
-        B = paired_image[:, :, W2:]  # Right half: original
+        # Apply the same transformation to both A and B
+        transform_params = get_params(self.opt, A.size)
+        A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
+        B_transform = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
+        
+        A = A_transform(A)
+        B = B_transform(B)
+
+        # Load bounding box annotations from JSON
+        json_path = self.json_paths[index]
+        bboxes = []
+        try:
+            with open(json_path, 'r') as file:
+                if file.readable() and file.seek(0) or file.read(1):  # Check if file is not empty
+                    file.seek(0)
+                    bboxes = json.load(file)
+                else:
+                    print(f"[WARNING] Empty JSON file: {json_path}")
+        except json.JSONDecodeError:
+            print(f"[ERROR] Malformed JSON file: {json_path}")
+        except Exception as e:
+            print(f"[ERROR] Could not read JSON file {json_path}: {e}")
 
         return {
-            'A': A,  
-            'B': B,  
-            'A_paths': img_path,
-            'B_paths': img_path,
-            'bbox': bboxes  # Bounding boxes for evaluation if needed
+            'A': A,
+            'B': B,
+            'A_paths': AB_path,
+            'B_paths': AB_path,
+            'bbox': bboxes
         }
 
     def __len__(self):
         """Return the number of images in the dataset."""
-        return len(self.image_paths)
+        return len(self.AB_paths)
