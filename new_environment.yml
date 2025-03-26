@@ -1,0 +1,26 @@
+name: W-Net
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - cudatoolkit=11.8
+  - cudnn=8.9.2.26
+  - numpy=1.26.4  # Adjust to latest stable version
+  - scipy=1.11.3
+  - matplotlib
+  - scikit-learn
+  - scikit-image
+  - pandas
+  - tqdm
+  - pip
+  - pip:
+      - torch==2.5.1  # Adjust to match your CUDA version
+      - torchvision==0.20.1
+      - triton==3.1.0
+      - wandb==0.18.7
+      - visdom==0.2.4
+      - tifffile==2024.9.20
+      - protobuf==3.20.3
+      - pycocotools==2.0.8
+      - opencv-python==4.10.0.84

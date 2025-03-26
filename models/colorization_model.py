@@ -1,4 +1,5 @@
-from .pix2pix_model import Pix2PixModel
+from .pix2pix_fft_model import Pix2PixfftModel
+from .pix2pix_nofft_model import Pix2PixnofftModel
 import torch
 from skimage import color  # used for lab2rgb
 import numpy as np
