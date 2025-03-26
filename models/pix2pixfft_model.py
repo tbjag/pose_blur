@@ -47,7 +47,7 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake', 'OD']
+        self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake', 'OD', 'G_freq']
         # self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
@@ -60,9 +60,19 @@ class Pix2PixfftModel(BaseModel):
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         if opt.netG == 'wnet':
-            path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
-            self.netG.module.load_checkpoint(path)
-            # self.netG.module.fuse()
+            # path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
+            # self.netG.module.load_checkpoint(path)
+            self.parameters = []
+            # for i, child in enumerate(self.netG.module.modules()):
+            #     # print(i, child)
+            #     if i < 225:
+            #         for param in child.parameters():
+            #             param.requires_grad = False
+            #             # print(type(param))
+            #     else:
+            #         for param in child.parameters():
+            #             self.parameters.append(param)
+            # print(self.parameters)
             # self.optimizer_W_Net = self.build_optimizer(
             #         model=self.netG.module,
             #     )
@@ -81,6 +91,11 @@ class Pix2PixfftModel(BaseModel):
             self.criterionL1 = torch.nn.L1Loss()
             self.criterionFreq = self.frequency_loss  # Custom frequency-domain loss for FFT
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
+            # params = [param.requires_grad for param in self.netG.parameters() ]
+            # print(params)
+            # trainable_params = list(filter(lambda p: p.requires_grad, params))
+            # print(trainable_params)
+            # self.optimizer_G = torch.optim.Adam(self.parameters, lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             
@@ -107,7 +122,10 @@ class Pix2PixfftModel(BaseModel):
         if self.model_name == 'wnet':
             # print(self.bounding_boxes)
             # print(torch.tensor(self.bounding_boxes))
-            input = {"img":self.real_A,"batch_idx":torch.tensor([0. for i in range(len(self.bounding_boxes))]),"cls":torch.tensor([[1.0]*len(self.bounding_boxes)]), "bboxes":torch.tensor(self.bounding_boxes)}
+            input = {"img": self.real_A,
+                    "batch_idx": torch.tensor([0.]*len(self.bounding_boxes), device=self.device),
+                    "cls": torch.tensor([[1.0]]*len(self.bounding_boxes), device=self.device), 
+                    "bboxes": torch.tensor(self.bounding_boxes, device=self.device)}           
             self.fake_B, self.loss_OD= self.netG(input)  # G(A)
             # print(self.loss_OD)
             self.loss_OD = self.loss_OD[0]
@@ -164,20 +182,22 @@ class Pix2PixfftModel(BaseModel):
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
 
-        # self.loss_G_freq = self.criterionFreq(self.real_B, self.fake_B, self.bounding_boxes) * self.opt.lambda_freq
+        self.loss_G_freq = self.criterionFreq(self.real_B, self.fake_B, self.bounding_boxes) * self.opt.lambda_freq
         
         # combine loss and calculate gradients
         #self.loss_G = self.loss_G_GAN + self.loss_G_L1
 
         #combine all losses, including the freq loss
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1 #+ self.loss_G_freq
+        self.loss_G = 5*self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq + 0.01*self.loss_OD
         
-        if self.model_name == 'wnet':
-            # print(self.loss_G)
-            # print([i.shape for i in self.od_loss])
-            self.loss_G += self.loss_OD
-
+            # Perform backward pass]
         self.loss_G.backward()
+        # self.loss_G.backward(retain_graph=True if self.model_name == 'wnet' else False)
+        
+        # Handle OD loss separately if using wnet
+        # if self.model_name == 'wnet' and hasattr(self, 'loss_OD'):
+        #     if isinstance(self.loss_OD, torch.Tensor) and self.loss_OD.requires_grad:
+        #         self.loss_OD.backward()
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
