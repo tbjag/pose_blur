@@ -620,11 +620,11 @@ if __name__ == "__main__":
     
     from ultralytics import YOLO
     
-    test_model = YOLO("yolov8x.pt","detect")
-    with open("yolo_model.txt", "w") as f:
-        f.write(str(test_model.model))
-    with open("my_model.txt", "w") as f:
-        f.write(str(model.model))
+    test_model = YOLO("yolov8n.pt","detect")
+    # with open("yolo_model.txt", "w") as f:
+    #     f.write(str(test_model.model))
+    # with open("my_model.txt", "w") as f:
+    #     f.write(str(model.model))
     
     # comparison = compare_models(model, test_model.model)
  

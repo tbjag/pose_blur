@@ -1,10 +1,9 @@
-
 import torch
 from .base_model import BaseModel
 from . import networks
 
 
-class Pix2PixfftModel(BaseModel):
+class Pix2PixfftWNetModel(BaseModel):
     """ This class implements the pix2pix model, for learning a mapping from input images to output images given paired data.
 
     The model training requires '--dataset_mode aligned' dataset.
@@ -40,7 +39,7 @@ class Pix2PixfftModel(BaseModel):
 
         return parser
 
-    def __init__(self, opt):
+    def __init__(self, opt, path = None):
         """Initialize the pix2pix class.
 
         Parameters:
@@ -48,8 +47,8 @@ class Pix2PixfftModel(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['G_GAN', 'G_L1', 'G_freq','D_real', 'D_fake']
-        #self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake']
+        self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake', 'OD', 'G_freq']
+        # self.loss_names = ['G_GAN', 'G_L1','D_real', 'D_fake','G_freq']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
@@ -60,7 +59,28 @@ class Pix2PixfftModel(BaseModel):
         # define networks (both generator and discriminator)
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        if opt.netG == 'wnet':
+            # path = "/home/wenjun/Lab/GAN_project/tanush_pose_blur/models/yolov8n.pt"
+            # self.netG.module.load_checkpoint(path)
+            self.parameters = []
+            # for i, child in enumerate(self.netG.module.modules()):
+            #     # print(i, child)
+            #     if i < 225:
+            #         for param in child.parameters():
+            #             param.requires_grad = False
+            #             # print(type(param))
+            #     else:
+            #         for param in child.parameters():
+            #             self.parameters.append(param)
+            # print(self.parameters)
+            # self.optimizer_W_Net = self.build_optimizer(
+            #         model=self.netG.module,
+            #     )
+            # self.optimizers.append(self.optimizer_W_Net)
+            # self.scaler = torch.amp.GradScaler("cuda", enabled=True)
 
+            
+        self.model_name = opt.netG
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
             self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
                                           opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
@@ -71,11 +91,17 @@ class Pix2PixfftModel(BaseModel):
             self.criterionL1 = torch.nn.L1Loss()
             self.criterionFreq = self.frequency_loss  # Custom frequency-domain loss for FFT
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
+            # params = [param.requires_grad for param in self.netG.parameters() ]
+            # print(params)
+            # trainable_params = list(filter(lambda p: p.requires_grad, params))
+            # print(trainable_params)
+            # self.optimizer_G = torch.optim.Adam(self.parameters, lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
-
+            
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
@@ -86,13 +112,26 @@ class Pix2PixfftModel(BaseModel):
         """
         AtoB = self.opt.direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
+        # print(self.real_A)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.bounding_boxes = input['bbox'] #Check bounding boxes for FFT
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B = self.netG(self.real_A)  # G(A)
+        if self.model_name == 'wnet':
+            # print(self.bounding_boxes)
+            # print(torch.tensor(self.bounding_boxes))
+            input = {"img": self.real_A,
+                    "batch_idx": torch.tensor([0.]*len(self.bounding_boxes), device=self.device),
+                    "cls": torch.tensor([[1.0]]*len(self.bounding_boxes), device=self.device), 
+                    "bboxes": torch.tensor(self.bounding_boxes, device=self.device)}           
+            self.fake_B, self.loss_OD= self.netG(input)  # G(A)
+            # print(self.loss_OD)
+            self.loss_OD = self.loss_OD[0]
+        else:
+            
+            self.fake_B = self.netG(self.real_A)  # G(A)
 
     def fft_image(self, img):
         fft_result = torch.fft.fft2(img)
@@ -149,8 +188,16 @@ class Pix2PixfftModel(BaseModel):
         #self.loss_G = self.loss_G_GAN + self.loss_G_L1
 
         #combine all losses, including the freq loss
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
+        self.loss_G = 5*self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq + 0.01*self.loss_OD
+        
+            # Perform backward pass]
         self.loss_G.backward()
+        # self.loss_G.backward(retain_graph=True if self.model_name == 'wnet' else False)
+        
+        # Handle OD loss separately if using wnet
+        # if self.model_name == 'wnet' and hasattr(self, 'loss_OD'):
+        #     if isinstance(self.loss_OD, torch.Tensor) and self.loss_OD.requires_grad:
+        #         self.loss_OD.backward()
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
@@ -164,3 +211,11 @@ class Pix2PixfftModel(BaseModel):
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # update G's weights
+        
+    def print_detections(self):
+        new_image, results = self.netG.module.inference(self.real_A, self.image_paths)
+        print(self.image_paths)
+        print(results[0].boxes)
+        for result in results:
+            im = result.plot(show=True,boxes = False,
+            save=True, filename="model_output_detect.jpg")
