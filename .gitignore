@@ -3,7 +3,10 @@ data/mnist_all/
 
 data/mnist_blur_pairs/
 data/MNIST/*
-
+results/
+results_no_fft/
+results_with_fft/
+FFT/
 wandb/
 checkpoints/
 # Ignore any other temporary or cache files
@@ -11,6 +14,7 @@ checkpoints/
 __pycache__/
 .ipynb_checkpoints/
 runs/
+inference_all_images.zip
 
 # Ignore virtual environments
 venv/
