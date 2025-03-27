@@ -47,64 +47,103 @@ def intersect_dicts(da, db, exclude=()):
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
 class WNetStructure(nn.Module):
-    def __init__(self, nc=80, ch=3):
+    def __init__(self, nc=80, ch=3, variant='n'):
+        """
+        Initialize WNetStructure with different size variants
+        Args:
+            nc: number of classes
+            ch: input channels
+            variant: model size ('n'=nano, 's'=small, 'm'=medium, 'l'=large, 'x'=xlarge)
+        """
         super(WNetStructure, self).__init__()
         self.nc = nc
         
+        # Set model size parameters based on variant
+        if variant == 'n':  # small
+            depth_multiplier = 1.0
+            width_multiplier = 0.5
+            n_list = [1, 2, 2, 1]
+            base_channels = [32, 64, 128, 256, 512]
+        elif variant == 's':  # small
+            depth_multiplier = 1
+            width_multiplier = 1
+            n_list = [1, 2, 2, 1]
+            base_channels = [32, 64, 128, 256, 512]
+        elif variant == 'm':  # medium
+            depth_multiplier = 1.0
+            width_multiplier = 1.0
+            n_list = [2, 4, 4, 2]
+            base_channels = [48, 96, 192, 384, 576]
+        elif variant == 'l':  # large
+            depth_multiplier = 1.0
+            width_multiplier = 1.0
+            n_list = [3, 6, 6, 3]
+            base_channels = [64, 128, 256, 512, 512]
+        elif variant == 'x':  # large
+            depth_multiplier = 1
+            width_multiplier = 1.25
+            n_list = [3, 6, 6, 3]
+            base_channels = [64, 128, 256, 512, 512]
+        else:
+            raise ValueError(f"Invalid variant: {variant}. Choose from 'n', 's', 'm', 'l', 'x'")
+        
+        # Apply width multiplier to channels
+        c1, c2, c3, c4, c5 = [int(c * width_multiplier) for c in base_channels]
+        
+        # Scale the number of repeats based on depth multiplier
+        n1, n2, n3, n4 = [max(round(n * depth_multiplier), 1) for n in n_list]
+        
         # Define backbone with layer connections
         module_config = [
-             # First Backbone (Downsampling)
-            (Conv(ch, 16, 3, 2), -1),                # 0: P1/2
-            (Conv(16, 32, 3, 2), -1),                # 1: P2/4  
-            (C2f(32, 32, n=1, shortcut=True), -1),   # 2
-            (Conv(32, 64, 3, 2), -1),                # 3: P3/8
-            (C2f(64, 64, n=2, shortcut=True), -1),   # 4
-            (Conv(64, 128, 3, 2), -1),               # 5: P4/16
-            (C2f(128, 128, n=2, shortcut=True), -1), # 6
-            (Conv(128, 256, 3, 2), -1),              # 7: P5/32
-            (C2f(256, 256, n=1, shortcut=True), -1), # 8
-            (SPPF(256, 256, k=5), -1),               # 9
+            # First Backbone (Downsampling)
+            (Conv(ch, c1, 3, 2), -1),                # 0: P1/2
+            (Conv(c1, c2, 3, 2), -1),                # 1: P2/4  
+            (C2f(c2, c2, n=n1, shortcut=True), -1),   # 2
+            (Conv(c2, c3, 3, 2), -1),                # 3: P3/8
+            (C2f(c3, c3, n=n2, shortcut=True), -1),   # 4
+            (Conv(c3, c4, 3, 2), -1),               # 5: P4/16
+            (C2f(c4, c4, n=n2, shortcut=True), -1), # 6
+            (Conv(c4, c5, 3, 2), -1),              # 7: P5/32
+            (C2f(c5, c5, n=n1, shortcut=True), -1), # 8
+            (SPPF(c5, c5, k=5), -1),               # 9
             
            # First Upsampling Path
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 10
             (Concat(1), [-1, 6]),                     # 11
-            (C2f(384, 128, n=1), -1),                # 12
+            (C2f(c4 + c5, c4, n=n1), -1),                # 12
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 13
             (Concat(1), [-1, 4]),                     # 14
-            (C2f(192, 64, n=1), -1),                 # 15
+            (C2f(c3 + c4, c3, n=n1), -1),                 # 15
             
             # Second Backbone (Mirror)
-            (Conv(64, 64, 3, 2), -1),                # 16: P3/8
-            (Concat(1), [-1,12]),   # 17 
-            (C2f(192, 128, n=1), -1), # 18
-            (Conv(128, 128, 3, 2), -1),              # 19: P5/32
-            (Concat(1), [-1,9]),                     #20
-            (C2f(384, 256, n=1), -1),                # 21
-            (Detect(nc, [64, 128, 256]), [15, 18, 21]),  #  22 Detection head
+            (Conv(c3, c3, 3, 2), -1),                # 16: P3/8
+            (Concat(1), [-1, 12]),   # 17 
+            (C2f(c3 + c4, c4, n=n1), -1), # 18
+            (Conv(c4, c4, 3, 2), -1),              # 19: P5/32
+            (Concat(1), [-1, 9]),                     # 20
+            (C2f(c4 + c5, c5, n=n1), -1),                # 21
+            (Detect(nc, [c3, c4, c5]), [15, 18, 21]),  # 22 Detection head
             
-            # Feature Pyramid Network, Maybe change size later
-            (SPPF(64, 64, k=5), 15),                #23
-            (SPPF(128, 128, k=5), 18),               #24
-            (SPPF(256, 256, k=5), 21),              #25
+            # Feature Pyramid Network
+            (SPPF(c3, c3, k=5), 15),                # 23
+            (SPPF(c4, c4, k=5), 18),                # 24
+            (SPPF(c5, c5, k=5), 21),                # 25
             
-             # Decoder Path (Reverse of Second Backbone)
+            # Decoder Path (Reverse of Second Backbone)
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 26
-            (Concat(1), [-1, 24]),                    # 27: Connect with P4 features
-            (C2f(384, 256, n=2), -1),                # 28
+            (Concat(1), [-1, 24]),                    # 27
+            (C2f(c4 + c5, c5, n=n2), -1),                # 28
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 29
-            (Concat(1), [-1, 23]),                    # 30: Connect with P3 features
-            
+            (Concat(1), [-1, 23]),                    # 30
             
             # Middle Bridge (Reverse Backbone to First Backbone)
-            (C2f(320, 128, n=2), -1),                 # 31
+            (C2f(c3 + c5, c4, n=n2), -1),                 # 31
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 32
-            (Concat(1), [-1, 2]),                     # 33: Connect with first backbone P4
-            (C2f(160, 48, n=2), -1),                # 34
+            (Concat(1), [-1, 2]),                     # 33
+            (C2f(c2 + c4, c2, n=n2), -1),                # 34
             (nn.Upsample(scale_factor=2, mode="nearest"), -1),  # 35
-            (C2f(48, 3, n=2), -1),                # 36
-            (nn.Upsample(scale_factor=2, mode="nearest"), -1),                # 37
-
-            
+            (C2f(c2, ch, n=n1), -1),                # 36
+            (nn.Upsample(scale_factor=2, mode="nearest"), -1),               # 37
         ]
 
         for i, (m, f) in enumerate(module_config):
@@ -112,11 +151,8 @@ class WNetStructure(nn.Module):
             
         self.model = nn.Sequential(*[module for module,_ in module_config])
             
-    
-
     def forward(self, x):
-        return self.model(x)
-    
+        return self.model(x)    
 
     
 COCO_CLASSES = {
@@ -142,20 +178,13 @@ COCO_CLASSES = {
 
     
 class WNet(nn.Module):
-    def __init__(self, nc =80):
+    def __init__(self, nc=80, variant='n'):
         super(WNet, self).__init__()
         self.nc = nc
-        # self.yaml = config if isinstance(config, dict) else yaml_model_load(config)  # cfg dict
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # ch = self.yaml["ch"] = self.yaml.get("ch", ch)
-        # ch = 3
         
-        # if nc and nc != self.yaml["nc"]:
-        #     print(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-        #     self.yaml["nc"] = nc  # override YAML value
-            
-        # self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
-        self.model = WNetStructure().model
+        # Create WNetStructure with specified variant
+        self.model = WNetStructure(nc=nc, variant=variant).model
         self.save = [2, 4, 6, 9, 12, 15, 18, 21,23,24]
         # self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
         self.names = COCO_CLASSES
@@ -583,19 +612,19 @@ if __name__ == "__main__":
     
     
     # print(config)
-    model = WNet()
-    model.load_checkpoint("yolov8n.pt")
+    model = WNet(variant="x")
+    model.load_checkpoint("yolov8x.pt")
     
     
     # print(model)
     
     from ultralytics import YOLO
     
-    test_model = YOLO("yolov8n.pt","detect")
-    # with open("yolo_yaml.txt", "w") as f:
-    #     f.write(str(test_model.model))
-    # with open("yolo_struct.txt", "w") as f:
-    #     f.write(str(struct.model))
+    test_model = YOLO("yolov8x.pt","detect")
+    with open("yolo_model.txt", "w") as f:
+        f.write(str(test_model.model))
+    with open("my_model.txt", "w") as f:
+        f.write(str(model.model))
     
     # comparison = compare_models(model, test_model.model)
  
