@@ -50,6 +50,14 @@ $ROOT/data
 └── PRW
 ```
 2. Following the link in the above table, download our pretrained model to anywhere you like, e.g., `$ROOT/exp_cuhk`
+```
+pip install gdown
+mkdir -p exp_cuhk
+gdown 1wKhCHy7uTHx8zxNS62Y1236GNv5TzFzq -O exp_cuhk/epoch_19.pth
+cp configs/cuhk_sysu.yaml exp_cuhk/config.yaml
+
+```
+
 3. Run an inference demo by specifing the paths of checkpoint and corresponding configuration file. `python demo.py --cfg $ROOT/exp_cuhk/config.yaml --ckpt $ROOT/exp_cuhk/epoch_19.pth` You can checkout the result in `demo_imgs` directory.
 
 ![demo.jpg](./demo_imgs/demo.jpg)
