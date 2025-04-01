@@ -44,11 +44,16 @@ Run `pip install -r requirements.txt` in the root directory of the project.
 Let's say `$ROOT` is the root directory.
 
 1. Download CUHK-SYSU ([google drive](https://drive.google.com/open?id=1z3LsFrJTUeEX3-XjSEJMOBrslxD2T5af) or [baiduyun](https://pan.baidu.com/s/1AYL_YPVVzGrVIrkOmBp5QQ?pwd=92v1)) and PRW ([google drive](https://goo.gl/2SNesA) or [baiduyun](https://pan.baidu.com/s/1U5YaSHuT6Cgl6xnjzh11Ow?pwd=q3q9)) datasets, and unzip them to `$ROOT/data`
+
 ```
 $ROOT/data
 ├── CUHK-SYSU
 └── PRW
 ```
+
+gdown 1z3LsFrJTUeEX3-XjSEJMOBrslxD2T5af -O CUHK-SYSU.zip
+unzip CUHK-SYSU.zip 
+
 2. Following the link in the above table, download our pretrained model to anywhere you like, e.g., `$ROOT/exp_cuhk`
 
 ```
