@@ -45,6 +45,8 @@ if __name__ == '__main__':
             # if data is None:  # Skip invalid or problematic data
             #     print(f"Skipping data at index {i}")
             #     continue
+            
+            
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % opt.print_freq == 0:
                 t_data = iter_start_time - iter_data_time
