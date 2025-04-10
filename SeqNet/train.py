@@ -11,9 +11,14 @@ from defaults import get_default_cfg
 from engine import evaluate_performance, train_one_epoch
 from models.seqnet import SeqNet
 from utils.utils import mkdir, resume_from_ckpt, save_on_master, set_random_seed
+import wandb
+
+
+
 
 
 def main(args):
+    
     cfg = get_default_cfg()
     if args.cfg_file:
         cfg.merge_from_file(args.cfg_file)
@@ -28,9 +33,24 @@ def main(args):
     model = SeqNet(cfg)
     model.to(device)
 
+    run = wandb.init(
+    project="seqnet",
+    name="baseline-run",
+    config={
+        "lr": cfg.SOLVER.BASE_LR,
+        "epochs": cfg.SOLVER.MAX_EPOCHS,
+        "optimizer": "SGD",
+        "momentum": cfg.SOLVER.SGD_MOMENTUM,
+        "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+        "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+    }
+)
+ 
     print("Loading data")
     train_loader = build_train_loader(cfg)
     gallery_loader, query_loader = build_test_loader(cfg)
+    
+   
 
     if args.eval:
         assert args.ckpt, "--ckpt must be specified when --eval enabled"
@@ -83,6 +103,8 @@ def main(args):
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
         train_one_epoch(cfg, model, optimizer, train_loader, device, epoch, tfboard)
+
+        
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -112,6 +134,7 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Total training time {total_time_str}")
+    run.finish()
 
 
 if __name__ == "__main__":
