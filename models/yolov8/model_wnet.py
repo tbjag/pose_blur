@@ -24,7 +24,7 @@ import yaml
 from copy import deepcopy
 import numpy as np
 import yolov8.ops as ops
-from yolov8.Results import Results #TODO Fix Result file to remove ultralytics code
+from yolov8.Results import Results 
 
 
 from pathlib import Path
@@ -34,10 +34,6 @@ __all__ = ("WNet","WNetStructure")
 
 #To fix loading model issue make self.legacy true in Head module
 
-#TO DO: Load in Yolo weights and test if the model is accurate. Test on the PRW dataset
-#TO DO: Make the W-net
-#To DO: Labels
-#Fix weights slightly
 
 
 

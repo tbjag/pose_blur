@@ -1,3 +1,8 @@
+import os
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+
 from copy import deepcopy
 
 import torch
@@ -11,8 +16,8 @@ from torchvision.models.detection.transform import GeneralizedRCNNTransform
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.ops import boxes as box_ops
 
-from models.oim import OIMLoss
-from models.resnet import build_resnet
+from SeqNet.models.oim import OIMLoss
+from SeqNet.models.resnet import build_resnet
 
 
 class SeqNet(nn.Module):

@@ -2,6 +2,7 @@ import os
 from scipy.io import loadmat
 import os.path as osp
 import numpy as np
+import torch
 
 
 import json
@@ -16,7 +17,7 @@ class CombinedCuhkDataset(BaseDataset):
     This loads preprocessed AB images (left: blurred, right: original) and applies transformations.
     """
 
-    def __init__(self, opt):
+    def __init__(self, opt, split="train"):
         """Initialize the dataset.
 
         Args:
@@ -24,8 +25,7 @@ class CombinedCuhkDataset(BaseDataset):
         """
         BaseDataset.__init__(self, opt)
         self.root = opt.dataroot
-        #TO DO: FIX SETTING THE SPLIT
-        self.split = "train"
+        self.split = split
         self.annotations = self._load_annotations()
         self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # Standardized naming
         self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # Use existing helper
@@ -37,7 +37,17 @@ class CombinedCuhkDataset(BaseDataset):
 
     def __getitem__(self, index):
         """Return a preprocessed image pair (blurred, original) with bounding boxes."""
-
+        if self.split != "train":
+            anno = self.annotations[index]
+            img = Image.open(anno["img_path"]).convert("RGB")
+            transform_params = get_params(self.opt, A.size)
+            A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
+            img, target = A_transform(img, target)
+            boxes = torch.as_tensor(anno["boxes"], dtype=torch.float32)
+            labels = torch.as_tensor(anno["pids"], dtype=torch.int64)
+            target = {"img_name": anno["img_name"], "boxes": boxes, "labels": labels}
+            return img, target
+        
         AB_path = self.AB_paths[index]
         AB = Image.open(AB_path).convert('RGB')
 
@@ -78,9 +88,10 @@ class CombinedCuhkDataset(BaseDataset):
         # print(f"image name {img_name}")
         # print(img_name in self.annotations)
         if img_name in self.annotations:
-            pid = self.annotations[img_name]["pids"][0] if len(self.annotations[img_name]["pids"]) > 0 else -1
+            pid = self.annotations[img_name]["pids"][0] if len(self.annotations[img_name]["pids"]) > 0 else 5555
         else: 
             print(img_name)
+            
         return {
             'A': A,
             'B': B,
@@ -106,7 +117,7 @@ class CombinedCuhkDataset(BaseDataset):
             queries.append(
                 {
                     "img_name": img_name,
-                    "img_path": osp.join(self.root,"train", img_name),
+                    "img_path": osp.join(self.root,self.split, img_name),
                     "boxes": roi[np.newaxis, :],
                     "pids": np.array([-100]),  # dummy pid
                 }
@@ -195,7 +206,7 @@ class CombinedCuhkDataset(BaseDataset):
             pids = name_to_pids[img_name]
             annotations[img_key] = {
                     "img_name": img_name,
-                    "img_path": osp.join(self.root,"train", img_name),
+                    "img_path": osp.join(self.root,self.split, img_name),
                     "boxes": boxes,
                     "pids": pids,
                 }
