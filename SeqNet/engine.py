@@ -1,7 +1,7 @@
 import math
 import sys
 from copy import deepcopy
-
+import wandb
 import torch
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
@@ -50,6 +50,7 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
             sys.exit(1)
 
         optimizer.zero_grad()
+        wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
@@ -64,7 +65,8 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
             iter = epoch * len(data_loader) + i
             for k, v in loss_dict_reduced.items():
                 tfboard.add_scalars("train", {k: v}, iter)
-
+        avg_loss = metric_logger.meters["loss"].global_avg
+    return avg_loss
 
 @torch.no_grad()
 def evaluate_performance(
