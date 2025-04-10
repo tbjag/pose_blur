@@ -2,6 +2,7 @@ import datetime
 import os.path as osp
 import time
 import torch
+import wandb
 
 
 import torch
@@ -38,6 +39,20 @@ def train_seqnet(opt, model_pix2pix):
     print("Creating SeqNet model")
     model = SeqNet(cfg)
     model.to(device)
+    
+    run = wandb.init(
+    project="seqnet",
+    name="baseline-run",
+    config={
+        "lr": cfg.SOLVER.BASE_LR,
+        "epochs": cfg.SOLVER.MAX_EPOCHS,
+        "optimizer": "SGD",
+        "momentum": cfg.SOLVER.SGD_MOMENTUM,
+        "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+        "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+    }
+)
+
 
     print("Loading data")
     train_loader = create_dataset(opt)
@@ -123,6 +138,8 @@ def train_seqnet(opt, model_pix2pix):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Total training time {total_time_str}")
+    run.finish()
+
 
 def train_gan(opt):
     """Train GAN model"""

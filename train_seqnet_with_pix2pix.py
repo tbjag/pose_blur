@@ -12,7 +12,7 @@ from tqdm import tqdm
 import numpy as np
 from scipy.io import loadmat
 from sklearn.metrics import average_precision_score
-
+import wandb
 
 
 # Import from SeqNet
@@ -20,6 +20,13 @@ from SeqNet.utils.utils import MetricLogger, SmoothedValue, mkdir, reduce_dict, 
 from SeqNet.utils.km import run_kuhn_munkres
 from SeqNet.utils.utils import write_json, mkdir
 
+
+def to_device(images, targets, device):
+    images = [image.to(device) for image in images]
+    for t in targets:
+        t["boxes"] = t["boxes"].to(device)
+        t["labels"] = t["labels"].to(device)
+    return images, targets
 
 def _compute_iou(a, b):
     x1 = max(a[0], b[0])
@@ -314,12 +321,6 @@ def eval_search_cuhk(
 
 
 
-def to_device(images, targets, device):
-    images = [image.to(device) for image in images]
-    for t in targets:
-        t["boxes"] = t["boxes"].to(device)
-        t["labels"] = t["labels"].to(device)
-    return images, targets
 
 
 def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=None):
@@ -354,6 +355,7 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
             sys.exit(1)
 
         optimizer.zero_grad()
+        wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
@@ -368,8 +370,8 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
             iter = epoch * len(data_loader) + i
             for k, v in loss_dict_reduced.items():
                 tfboard.add_scalars("train", {k: v}, iter)
-                
-                
+        avg_loss = metric_logger.meters["loss"].global_avg
+    return avg_loss
 
 @torch.no_grad()
 def evaluate_performance(
@@ -466,5 +468,6 @@ def evaluate_performance(
         query_feats,
         cbgm=use_cbgm,
     )
+
 
 
