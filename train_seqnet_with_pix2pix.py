@@ -1,4 +1,5 @@
 import os.path as osp
+from re import S
 import torch
 
 import math
@@ -319,7 +320,54 @@ def eval_search_cuhk(
 
 
 
-
+def save_tensor_as_jpg(tensor, filepath, denormalize=True):
+    """
+    Save a PyTorch tensor as a JPG image.
+    
+    Args:
+        tensor (torch.Tensor): Image tensor of shape (C, H, W) or (B, C, H, W)
+        filepath (str): Path to save the image
+        denormalize (bool): Whether to denormalize from [-1,1] to [0,1] range
+    """
+    import torch
+    import numpy as np
+    from PIL import Image
+    
+    # Make a copy of the tensor to avoid modifying the original
+    img_tensor = tensor.clone().detach()
+    
+    # If tensor is batched (B, C, H, W), take the first image
+    if len(img_tensor.shape) == 4:
+        img_tensor = img_tensor[0]
+    
+    # Move to CPU if necessary
+    if img_tensor.is_cuda:
+        img_tensor = img_tensor.cpu()
+    
+    # Denormalize if needed (assuming the tensor is in [-1, 1] range)
+    if denormalize:
+        img_tensor = (img_tensor + 1) / 2.0
+    
+    # Clamp values to be in [0, 1]
+    img_tensor = torch.clamp(img_tensor, 0, 1)
+    
+    # Convert to numpy and transpose from (C, H, W) to (H, W, C)
+    img_np = img_tensor.numpy()
+    img_np = np.transpose(img_np, (1, 2, 0))
+    
+    # Convert to uint8 in range [0, 255]
+    img_np = (img_np * 255).astype(np.uint8)
+    
+    # Handle both RGB and grayscale
+    if img_np.shape[2] == 1:
+        img_np = img_np[:, :, 0]
+    
+    # Save the image
+    img = Image.fromarray(img_np)
+    img.save(filepath)
+    print(f"Image saved to {filepath}")
+    
+    return filepath
 
 
 
@@ -345,11 +393,14 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
         visuals = modeL_pix2pix.get_current_visuals()  # get image results
         
         images = visuals['fake_B']
+        
+        save_tensor_as_jpg(images, "image.jpg")
+        exit()
         targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
         targets = [targets]
         # print(images.shape)
         # exit()
-        images = [torch.squeeze(images, axis=0)]
+        images = [images[0]]
         images, targets = to_device(images, targets, device)
         # print(images, targets)
         loss_dict = model_seqnet(images, targets)
