@@ -2,6 +2,7 @@ OUTPUT_DIR: "./exp_cuhk_2"
 INPUT:
   DATASET: "CUHK-SYSU"
   DATA_ROOT: "/media/Data_2/person-search/dataset"
+  BATCH_SIZE_TRAIN : 1
 SOLVER:
   MAX_EPOCHS: 20
 MODEL:

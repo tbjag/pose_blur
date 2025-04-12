@@ -39,19 +39,19 @@ def train_seqnet(opt, model_pix2pix):
     print("Creating SeqNet model")
     model = SeqNet(cfg)
     model.to(device)
-    
-    run = wandb.init(
-    project="seqnet",
-    name="baseline-run",
-    config={
-        "lr": cfg.SOLVER.BASE_LR,
-        "epochs": cfg.SOLVER.MAX_EPOCHS,
-        "optimizer": "SGD",
-        "momentum": cfg.SOLVER.SGD_MOMENTUM,
-        "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
-        "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
-    }
-)
+    if opt.use_wandb:
+        run = wandb.init(
+        project="seqnet",
+        name="baseline-run",
+        config={
+            "lr": cfg.SOLVER.BASE_LR,
+            "epochs": cfg.SOLVER.MAX_EPOCHS,
+            "optimizer": "SGD",
+            "momentum": cfg.SOLVER.SGD_MOMENTUM,
+            "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+            "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+        }
+    )
 
 
     print("Loading data")
@@ -85,9 +85,10 @@ def train_seqnet(opt, model_pix2pix):
     )
 
     start_epoch = 0
-    if opt.resume:
-        assert opt.ckpt, "--ckpt must be specified when --resume enabled"
-        start_epoch = resume_from_ckpt(opt.ckpt, model, optimizer, lr_scheduler) + 1
+    
+    # if opt.resume:
+    #     assert opt.ckpt, "--ckpt must be specified when --resume enabled"
+    #     start_epoch = resume_from_ckpt(opt.ckpt, model, optimizer, lr_scheduler) + 1
 
     print("Creating output folder")
     output_dir = cfg.OUTPUT_DIR
@@ -108,12 +109,13 @@ def train_seqnet(opt, model_pix2pix):
     print("Start training SeqNet")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
-        train_one_epoch(cfg, model, optimizer, train_loader, device, epoch, tfboard)
+        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
             evaluate_performance(
                 model,
+                model_pix2pix,
                 gallery_loader,
                 query_loader,
                 device,
@@ -138,7 +140,8 @@ def train_seqnet(opt, model_pix2pix):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Total training time {total_time_str}")
-    run.finish()
+    if opt.use_wandb:
+        run.finish()
 
 
 def train_gan(opt):
@@ -202,20 +205,20 @@ def combined_train(opt):
 
 if __name__ == '__main__':
     
-    options = TrainOptions().parse()
-    train_gan(options)
+    # options = TrainOptions().parse()
+    # train_gan(options)
     
-    # options = TestOptions().parse
-    # options.num_threads = 0   # test code only supports num_threads = 0
-    # options.batch_size = 1    # test code only supports batch_size = 1
-    # options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    # options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    # options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
-    # model_pix2pix = create_model(options)      # create a model given opt.model and other options
-    # model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
-    # model_pix2pix.eval()
+    options = TestOptions().parse()
+    options.num_threads = 0   # test code only supports num_threads = 0
+    options.batch_size = 1    # test code only supports batch_size = 1
+    options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    model_pix2pix = create_model(options)      # create a model given opt.model and other options
+    model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+    model_pix2pix.eval()
     
-    # train_seqnet(options, model_pix2pix)
+    train_seqnet(options, model_pix2pix)
 
     
     

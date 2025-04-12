@@ -38,7 +38,7 @@ class CombinedCuhkDataset(BaseDataset):
     def __getitem__(self, index):
         """Return a preprocessed image pair (blurred, original) with bounding boxes."""
         if self.split != "train":
-            anno = self.annotations[index]
+            anno = self.annotations[img_name]
             img = Image.open(anno["img_path"]).convert("RGB")
             transform_params = get_params(self.opt, A.size)
             A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
@@ -88,14 +88,16 @@ class CombinedCuhkDataset(BaseDataset):
         # print(f"image name {img_name}")
         # print(img_name in self.annotations)
         if img_name in self.annotations:
-            pid = self.annotations[img_name]["pids"][0] if len(self.annotations[img_name]["pids"]) > 0 else 5555
+            anno = self.annotations[img_name]
+            pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
         else: 
             print(img_name)
             
         return {
             'A': A,
             'B': B,
-            'pid':pid,
+            'labels':pid,
+            "img_name" :img_name,
             'A_paths': AB_path,
             'B_paths': AB_path,
             'bbox': bboxes

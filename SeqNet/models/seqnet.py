@@ -16,9 +16,11 @@ from torchvision.models.detection.transform import GeneralizedRCNNTransform
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.ops import boxes as box_ops
 
-from SeqNet.models.oim import OIMLoss
-from SeqNet.models.resnet import build_resnet
+from models.oim import OIMLoss
+from models.resnet import build_resnet
 
+# from SeqNet.models.oim import OIMLoss
+# from SeqNet.models.resnet import build_resnet
 
 class SeqNet(nn.Module):
     def __init__(self, cfg):
@@ -139,6 +141,8 @@ class SeqNet(nn.Module):
         images, targets = self.transform(images, targets)
         features = self.backbone(images.tensors)
         proposals, proposal_losses = self.rpn(images, features, targets)
+        print(f'line 142, {features.keys(), len(proposals), images.image_sizes, len(targets)}')
+    
         _, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
 
         # rename rpn losses to be consistent with detection losses
