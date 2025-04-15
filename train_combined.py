@@ -4,10 +4,11 @@ import time
 import torch
 import wandb
 
+from tabulate import tabulate
 
 import torch
 
-from train_seqnet_with_pix2pix import  train_one_epoch,  evaluate_performance
+from seqnet_with_pix2pix_engine import  train_one_epoch,  evaluate_performance
 
 
 # Import from SeqNet
@@ -22,6 +23,62 @@ from models import create_model
 from util.visualizer import Visualizer
 from options.train_options import TrainOptions
 from options.test_options import TestOptions
+
+def create_small_table(small_dict):
+    """
+    Create a small table using the keys of small_dict as headers. This is only
+    suitable for small dictionaries.
+
+    Args:
+        small_dict (dict): a result dictionary of only a few items.
+
+    Returns:
+        str: the table as a string.
+    """
+    keys, values = tuple(zip(*small_dict.items()))
+    table = tabulate(
+        [values],
+        headers=keys,
+        tablefmt="pipe",
+        floatfmt=".3f",
+        stralign="center",
+        numalign="center",
+    )
+    return table
+
+def print_statistics(dataset):
+    """
+    Print dataset statistics.
+    """
+    num_imgs = len(dataset.annotations)
+    num_boxes = 0
+    pid_set = set()
+    for i in dataset.annotations:
+        anno = dataset.annotations[i]
+        num_boxes += anno["boxes"].shape[0]
+        for pid in anno["pids"]:
+            pid_set.add(pid)
+    statistics = {
+        "dataset": "CUHK",
+        "split": dataset.split,
+        "num_images": num_imgs,
+        "num_boxes": num_boxes,
+    }
+    if dataset.split != "query":
+        pid_list = sorted(list(pid_set))
+        unlabeled_pid = pid_list[-1]
+        pid_list = pid_list[:-1]  # remove unlabeled pid
+        num_pids, min_pid, max_pid = len(pid_list), min(pid_list), max(pid_list)
+        statistics.update(
+            {
+                "num_labeled_pids": num_pids,
+                "min_labeled_pid": int(min_pid),
+                "max_labeled_pid": int(max_pid),
+                "unlabeled_pid": int(unlabeled_pid),
+            }
+        )
+
+    print(f"=> CUHK-{dataset.split} loaded:\n" + create_small_table(statistics))
 
 
 
@@ -56,8 +113,10 @@ def train_seqnet(opt, model_pix2pix):
 
     print("Loading data")
     train_loader = create_dataset(opt)
+    print_statistics(train_loader.dataset)
     gallery_loader, query_loader = create_dataset(opt,split="gallery"),  create_dataset(opt,split="query")
-
+    print_statistics(gallery_loader.dataset)
+    print_statistics(query_loader.dataset)
     if opt.eval:
         assert opt.ckpt, "--ckpt must be specified when --eval enabled"
         resume_from_ckpt(opt.ckpt, model)
@@ -205,20 +264,20 @@ def combined_train(opt):
 
 if __name__ == '__main__':
     
-    # options = TrainOptions().parse()
-    # train_gan(options)
+    options = TrainOptions().parse()
+    train_gan(options)
     
-    options = TestOptions().parse()
-    options.num_threads = 0   # test code only supports num_threads = 0
-    options.batch_size = 1    # test code only supports batch_size = 1
-    options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
-    model_pix2pix = create_model(options)      # create a model given opt.model and other options
-    model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
-    model_pix2pix.eval()
+    # options = TestOptions().parse()
+    # options.num_threads = 0   # test code only supports num_threads = 0
+    # options.batch_size = 1    # test code only supports batch_size = 1
+    # options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    # options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    # options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    # model_pix2pix = create_model(options)      # create a model given opt.model and other options
+    # model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+    # model_pix2pix.eval()
     
-    train_seqnet(options, model_pix2pix)
+    # train_seqnet(options, model_pix2pix)
 
     
     

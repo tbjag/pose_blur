@@ -391,17 +391,21 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
         modeL_pix2pix.set_input(data)  # unpack data from data loader
         modeL_pix2pix.test()           # run inference
         visuals = modeL_pix2pix.get_current_visuals()  # get image results
-        
+        # print(visuals['real_B'].shape)
         images = visuals['fake_B']
+        print(f"line 396 {images.shape}")
         
-        save_tensor_as_jpg(images, "image.jpg")
-        exit()
+        # save_tensor_as_jpg(images, "image.jpg")
+        # exit()
+        
         targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
         targets = [targets]
         # print(images.shape)
         # exit()
         images = [images[0]]
         images, targets = to_device(images, targets, device)
+        # print(f"Target data  bboxs  {targets[0]['boxes']}")
+
         # print(images, targets)
         loss_dict = model_seqnet(images, targets)
         
