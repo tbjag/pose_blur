@@ -1,4 +1,5 @@
 import os.path as osp
+from re import S
 import torch
 
 import math
@@ -319,12 +320,59 @@ def eval_search_cuhk(
 
 
 
+def save_tensor_as_jpg(tensor, filepath, denormalize=True):
+    """
+    Save a PyTorch tensor as a JPG image.
+    
+    Args:
+        tensor (torch.Tensor): Image tensor of shape (C, H, W) or (B, C, H, W)
+        filepath (str): Path to save the image
+        denormalize (bool): Whether to denormalize from [-1,1] to [0,1] range
+    """
+    import torch
+    import numpy as np
+    from PIL import Image
+    
+    # Make a copy of the tensor to avoid modifying the original
+    img_tensor = tensor.clone().detach()
+    
+    # If tensor is batched (B, C, H, W), take the first image
+    if len(img_tensor.shape) == 4:
+        img_tensor = img_tensor[0]
+    
+    # Move to CPU if necessary
+    if img_tensor.is_cuda:
+        img_tensor = img_tensor.cpu()
+    
+    # Denormalize if needed (assuming the tensor is in [-1, 1] range)
+    if denormalize:
+        img_tensor = (img_tensor + 1) / 2.0
+    
+    # Clamp values to be in [0, 1]
+    img_tensor = torch.clamp(img_tensor, 0, 1)
+    
+    # Convert to numpy and transpose from (C, H, W) to (H, W, C)
+    img_np = img_tensor.numpy()
+    img_np = np.transpose(img_np, (1, 2, 0))
+    
+    # Convert to uint8 in range [0, 255]
+    img_np = (img_np * 255).astype(np.uint8)
+    
+    # Handle both RGB and grayscale
+    if img_np.shape[2] == 1:
+        img_np = img_np[:, :, 0]
+    
+    # Save the image
+    img = Image.fromarray(img_np)
+    img.save(filepath)
+    print(f"Image saved to {filepath}")
+    
+    return filepath
 
 
 
-
-def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=None):
-    model.train()
+def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None):
+    model_seqnet.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = "Epoch: [{}]".format(epoch)
@@ -336,12 +384,31 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
         warmup_iters = len(data_loader) - 1
         warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
 
-    for i, (images, targets) in enumerate(
+    for i, (data) in enumerate(
         metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
     ):
+        
+        modeL_pix2pix.set_input(data)  # unpack data from data loader
+        modeL_pix2pix.test()           # run inference
+        visuals = modeL_pix2pix.get_current_visuals()  # get image results
+        # print(visuals['real_B'].shape)
+        images = visuals['fake_B']
+        print(f"line 396 {images.shape}")
+        
+        # save_tensor_as_jpg(images, "image.jpg")
+        # exit()
+        
+        targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+        targets = [targets]
+        # print(images.shape)
+        # exit()
+        images = [images[0]]
         images, targets = to_device(images, targets, device)
+        # print(f"Target data  bboxs  {targets[0]['boxes']}")
 
-        loss_dict = model(images, targets)
+        # print(images, targets)
+        loss_dict = model_seqnet(images, targets)
+        
         losses = sum(loss for loss in loss_dict.values())
 
         # reduce losses over all GPUs for logging purposes
@@ -358,7 +425,7 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
         wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
-            clip_grad_norm_(model.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
+            clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
         optimizer.step()
 
         if epoch == 0:
@@ -375,7 +442,7 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
 
 @torch.no_grad()
 def evaluate_performance(
-    model, gallery_loader, query_loader, device, use_gt=False, use_cache=False, use_cbgm=False
+    model_seqnet,model_pix2pix, gallery_loader, query_loader, device, use_gt=False, use_cache=False, use_cbgm=False
 ):
     """
     Args:
@@ -385,7 +452,7 @@ def evaluate_performance(
         use_cbgm (bool, optional): Whether to use Context Bipartite Graph Matching algorithm.
                                 Defaults to False.
     """
-    model.eval()
+    model_seqnet.eval()
     if use_cache:
         eval_cache = torch.load("data/eval_cache/eval_cache.pth")
         gallery_dets = eval_cache["gallery_dets"]
@@ -398,11 +465,11 @@ def evaluate_performance(
         for images, targets in tqdm(gallery_loader, ncols=0):
             images, targets = to_device(images, targets, device)
             if not use_gt:
-                outputs = model(images)
+                outputs = model_seqnet(images)
             else:
                 boxes = targets[0]["boxes"]
                 n_boxes = boxes.size(0)
-                embeddings = model(images, targets)
+                embeddings = model_seqnet(images, targets)
                 outputs = [
                     {
                         "boxes": boxes,
@@ -423,7 +490,7 @@ def evaluate_performance(
         for images, targets in tqdm(query_loader, ncols=0):
             images, targets = to_device(images, targets, device)
             # targets will be modified in the model, so deepcopy it
-            outputs = model(images, deepcopy(targets), query_img_as_gallery=True)
+            outputs = model_seqnet(images, deepcopy(targets), query_img_as_gallery=True)
 
             # consistency check
             gt_box = targets[0]["boxes"].squeeze()
@@ -440,7 +507,7 @@ def evaluate_performance(
         query_box_feats = []
         for images, targets in tqdm(query_loader, ncols=0):
             images, targets = to_device(images, targets, device)
-            embeddings = model(images, targets)
+            embeddings = model_seqnet(images, targets)
             assert len(embeddings) == 1, "batch size in test phase should be 1"
             query_box_feats.append(embeddings[0].cpu().numpy())
 

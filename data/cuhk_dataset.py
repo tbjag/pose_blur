@@ -42,10 +42,12 @@ class CuhkDataset(BaseDataset):
         B = AB.crop((w2, 0, w, h))
 
         # Apply the same transformation to both A and B
+        
         transform_params = get_params(self.opt, A.size)
         A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
         B_transform = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
         
+        #transform the bounding boxes as well
         A = A_transform(A)
         B = B_transform(B)
 

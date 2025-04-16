@@ -38,7 +38,7 @@ class CombinedCuhkDataset(BaseDataset):
     def __getitem__(self, index):
         """Return a preprocessed image pair (blurred, original) with bounding boxes."""
         if self.split != "train":
-            anno = self.annotations[index]
+            anno = self.annotations[img_name]
             img = Image.open(anno["img_path"]).convert("RGB")
             transform_params = get_params(self.opt, A.size)
             A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
@@ -54,12 +54,12 @@ class CombinedCuhkDataset(BaseDataset):
         # Ensure image width is even for proper splitting
         w, h = AB.size
         assert w % 2 == 0, f"[ERROR] Image width {w} is not even, cannot split into A and B."
-
+        
         # Split image into A (original) and B (blurred)
         w2 = w // 2
         A = AB.crop((0, 0, w2, h))
         B = AB.crop((w2, 0, w, h))
-
+        # print(A.size)
         # Apply the same transformation to both A and B
         transform_params = get_params(self.opt, A.size)
         A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
@@ -76,6 +76,7 @@ class CombinedCuhkDataset(BaseDataset):
                 if file.readable() and file.seek(0) or file.read(1):  # Check if file is not empty
                     file.seek(0)
                     bboxes = json.load(file)
+                    
                 else:
                     print(f"[WARNING] Empty JSON file: {json_path}")
         except json.JSONDecodeError:
@@ -88,14 +89,16 @@ class CombinedCuhkDataset(BaseDataset):
         # print(f"image name {img_name}")
         # print(img_name in self.annotations)
         if img_name in self.annotations:
-            pid = self.annotations[img_name]["pids"][0] if len(self.annotations[img_name]["pids"]) > 0 else 5555
+            anno = self.annotations[img_name]
+            pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
         else: 
             print(img_name)
-            
+        # print(f"Dataset Combined bboxs {file} {bboxes}")
         return {
             'A': A,
             'B': B,
-            'pid':pid,
+            'labels':pid,
+            "img_name" :img_name,
             'A_paths': AB_path,
             'B_paths': AB_path,
             'bbox': bboxes
@@ -109,19 +112,19 @@ class CombinedCuhkDataset(BaseDataset):
         # TestG50: a test protocol, 50 gallery images per query
         protoc = loadmat(osp.join(self.root, "annotation/test/train_test/TestG50.mat"))
         protoc = protoc["TestG50"].squeeze()
-        queries = []
+        queries = dict()
         for item in protoc["Query"]:
             img_name = str(item["imname"][0, 0][0])
+            img_key = img_name.split('.')[0]  # Get filename without extension
             roi = item["idlocate"][0, 0][0].astype(np.int32)
             roi[2:] += roi[:2]
-            queries.append(
-                {
+            queries[img_key] ={
                     "img_name": img_name,
                     "img_path": osp.join(self.root,self.split, img_name),
                     "boxes": roi[np.newaxis, :],
                     "pids": np.array([-100]),  # dummy pid
                 }
-            )
+            
         return queries
 
     def _load_split_img_names(self):
