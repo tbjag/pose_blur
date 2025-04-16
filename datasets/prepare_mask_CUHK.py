@@ -81,41 +81,55 @@ class CUHKProcessor:
 
         for img_path in tqdm(image_paths, desc="Processing CUHK images"):
             img_name = os.path.basename(img_path)
+            print(f'Processing image: {img_name}')
             img_name_no_ext, img_ext = os.path.splitext(img_name)  # Extract filename without extension
 
             # Load original image
-            image = Image.open(img_path).convert('RGB')
-
+            original_image = Image.open(img_path).convert('RGB')
+            orig_w, orig_h = original_image.size
             # Get bounding boxes
             bboxes = self.bbox_data.get(img_name, [])
 
             # Create blurred image
-            blurred_image = self._apply_blur(image, bboxes)
+            blurred_image = self._apply_blur(original_image, bboxes)
 
             # Resize both images to standard size
-            image = image.resize(self.standard_size, Image.BICUBIC)
-            blurred_image = blurred_image.resize(self.standard_size, Image.BICUBIC)
+            image_resized = original_image.resize(self.standard_size, Image.BICUBIC)
+            blurred_resized = blurred_image.resize(self.standard_size, Image.BICUBIC)
 
+            # Scale bounding boxes to fit resized image
+            scale_x = self.standard_size[0] / orig_w
+            scale_y = self.standard_size[1] / orig_h
+            
+            scaled_bboxes = []
+            for box in bboxes:
+                x1, y1, x2, y2 = box
+                scaled_bboxes.append([
+                    int(x1 * scale_x),
+                    int(y1 * scale_y),
+                    int(x2 * scale_x),
+                    int(y2 * scale_y)
+                ])
             # Create paired image (Concatenating along width)
             paired_image = Image.new('RGB', (self.standard_size[0] * 2, self.standard_size[1]))  
-            paired_image.paste(image, (0, 0))  # Original image on the left
-            paired_image.paste(blurred_image, (self.standard_size[0], 0))  # Blurred image on the right
+            paired_image.paste(image_resized, (0, 0))  # Original image on the left
+            paired_image.paste(blurred_resized, (self.standard_size[0], 0))  # Blurred image on the right
 
 
             # Save transformed pair
             save_path = os.path.join(self.save_dir, f"{img_name_no_ext}.png")
             paired_image.save(save_path)
 
-            # Save bounding boxes as JSON
+            # Save scaled bounding boxes as JSON
             bbox_json_path = os.path.join(self.save_dir, f"{img_name_no_ext}.json")
             with open(bbox_json_path, 'w') as f:
-                json.dump(bboxes, f)
+                json.dump(scaled_bboxes, f)
 
         print(f"Finished processing {len(image_paths)} images. Saved to {self.save_dir}")
 
 if __name__ == "__main__":
     data_dir = "/media/Data_2/person-search/dataset"
-    save_dir = "/media/Data_2/person-search/dataset/cuhk_transformed_correct"
+    save_dir = "/media/Data_2/person-search/dataset/bbox_corrected_CUHK"
 
     processor = CUHKProcessor(data_dir, save_dir, standard_size=(256, 256), blur_radius=10)
     processor.process_images()

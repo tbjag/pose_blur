@@ -4,6 +4,7 @@ data/mnist_all/
 data/mnist_blur_pairs/
 data/MNIST/*
 results/
+results-jon
 results_no_fft/
 results_with_fft/
 FFT/
