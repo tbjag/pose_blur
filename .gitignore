@@ -1,6 +1,6 @@
 # Ignore the data directory that contains all the mnist files
 data/mnist_all/
-
+output_checked/
 exp_cuhk_2
 
 data/mnist_blur_pairs/
