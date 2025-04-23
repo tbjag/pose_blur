@@ -139,12 +139,9 @@ class SeqNet(nn.Module):
             return self.inference(images, targets, query_img_as_gallery)
 
         images, targets = self.transform(images, targets)
-        # print(f"Batch tensor shape: {images.tensors.shape}")
-        # print(f"Target data  bboxs in seqnet {targets[0]['boxes']}")
-
         features = self.backbone(images.tensors)
         proposals, proposal_losses = self.rpn(images, features, targets)
-        print(f'line 142, {features.keys(), len(proposals), images.image_sizes, len(targets)}')
+        # print(f'line 142, {features.keys(), len(proposals), images.image_sizes, targets}')
     
         _, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
 
@@ -196,7 +193,7 @@ class SeqRoIHeads(RoIHeads):
             targets (List[Dict])
         """
         if self.training:
-            print(f'line 196, {[i.shape for i in proposals], len(proposals), targets, len(targets)}')
+            # print(f'line 196, {[i.shape for i in proposals], len(proposals), targets, len(targets)}')
             proposals, _, proposal_pid_labels, proposal_reg_targets = self.select_training_samples(
                 proposals, targets
             )

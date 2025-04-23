@@ -387,28 +387,28 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
     for i, (data) in enumerate(
         metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
     ):
-        
         modeL_pix2pix.set_input(data)  # unpack data from data loader
         modeL_pix2pix.test()           # run inference
         visuals = modeL_pix2pix.get_current_visuals()  # get image results
-        # print(visuals['real_B'].shape)
         images = visuals['fake_B']
-        print(f"line 396 {images.shape}")
-        
         # save_tensor_as_jpg(images, "image.jpg")
-        # exit()
         
         targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+        
+        # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+
         targets = [targets]
         # print(images.shape)
         # exit()
         images = [images[0]]
         images, targets = to_device(images, targets, device)
-        # print(f"Target data  bboxs  {targets[0]['boxes']}")
+        targets[0]['boxes'] =targets[0]['boxes'][0]
+        targets[0]['labels'] = targets[0]['labels'][0]
+        # print(f"Target data  bboxs  {targets}")
 
         # print(images, targets)
         loss_dict = model_seqnet(images, targets)
-        
+        # print(loss_dict)
         losses = sum(loss for loss in loss_dict.values())
 
         # reduce losses over all GPUs for logging purposes
@@ -422,7 +422,7 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
             sys.exit(1)
 
         optimizer.zero_grad()
-        wandb.log(loss_dict)
+        # wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
@@ -462,8 +462,27 @@ def evaluate_performance(
         query_box_feats = eval_cache["query_box_feats"]
     else:
         gallery_dets, gallery_feats = [], []
-        for images, targets in tqdm(gallery_loader, ncols=0):
+        for i, (data) in tqdm(enumerate(
+            gallery_loader
+        ), ncols=0):
+            model_pix2pix.set_input(data)  # unpack data from data loader
+            model_pix2pix.test()           # run inference
+            visuals = model_pix2pix.get_current_visuals()  # get image results
+            images = visuals['fake_B']
+            # save_tensor_as_jpg(images, "image.jpg")
+            
+            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+            
+            # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+
+            targets = [targets]
+            # print(images.shape)
+            # exit()
+            images = [images[0]]
             images, targets = to_device(images, targets, device)
+            targets[0]['boxes'] =targets[0]['boxes'][0]
+            targets[0]['labels'] = targets[0]['labels'][0]
+
             if not use_gt:
                 outputs = model_seqnet(images)
             else:
@@ -487,8 +506,24 @@ def evaluate_performance(
         # regarding query image as gallery to detect all people
         # i.e. query person + surrounding people (context information)
         query_dets, query_feats = [], []
-        for images, targets in tqdm(query_loader, ncols=0):
+        for i, (data) in tqdm(enumerate(
+            query_loader
+        ), ncols=0):
+            model_pix2pix.set_input(data)  # unpack data from data loader
+            model_pix2pix.test()           # run inference
+            visuals = model_pix2pix.get_current_visuals()  # get image results
+            images = visuals['fake_B']
+            # save_tensor_as_jpg(images, "image.jpg")
+            
+            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+            
+
+            targets = [targets]
+            images = [images[0]]
             images, targets = to_device(images, targets, device)
+            targets[0]['boxes'] =targets[0]['boxes'][0]
+            targets[0]['labels'] = targets[0]['labels'][0]
+
             # targets will be modified in the model, so deepcopy it
             outputs = model_seqnet(images, deepcopy(targets), query_img_as_gallery=True)
 
@@ -505,8 +540,23 @@ def evaluate_performance(
 
         # extract the features of query boxes
         query_box_feats = []
-        for images, targets in tqdm(query_loader, ncols=0):
+        for i, (data) in tqdm(enumerate(
+            query_loader
+        ), ncols=0):
+            model_pix2pix.set_input(data)  # unpack data from data loader
+            model_pix2pix.test()           # run inference
+            visuals = model_pix2pix.get_current_visuals()  # get image results
+            images = visuals['fake_B']
+            # save_tensor_as_jpg(images, "image.jpg")
+            
+            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+            
+
+            targets = [targets]
+            images = [images[0]]
             images, targets = to_device(images, targets, device)
+            targets[0]['boxes'] =targets[0]['boxes'][0]
+            targets[0]['labels'] = targets[0]['labels'][0]
             embeddings = model_seqnet(images, targets)
             assert len(embeddings) == 1, "batch size in test phase should be 1"
             query_box_feats.append(embeddings[0].cpu().numpy())

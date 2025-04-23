@@ -25,7 +25,7 @@ def main(args):
     cfg.merge_from_list(args.opts)
     cfg.freeze()
 
-    device = torch.device(cfg.DEVICE)
+    device = torch.device(1)
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 

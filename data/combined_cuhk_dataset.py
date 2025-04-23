@@ -7,8 +7,10 @@ import torch
 
 import json
 from PIL import Image
-from data.base_dataset import BaseDataset, get_params, get_transform
+from data.base_dataset import BaseDataset, get_params, get_transform, build_transforms
 from data.image_folder import make_dataset, make_bbox
+
+from data.bounding_box_check import process_image_tensor, process_single_image
 
 
 class CombinedCuhkDataset(BaseDataset):
@@ -30,6 +32,7 @@ class CombinedCuhkDataset(BaseDataset):
         self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # Standardized naming
         self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # Use existing helper
         self.json_paths = sorted(make_bbox(self.dir_AB, opt.max_dataset_size))
+        self.transforms = build_transforms(self.split == 'train')
 
         assert opt.load_size >= opt.crop_size, "Crop size should be smaller than load size."
         self.input_nc = opt.output_nc if opt.direction == 'BtoA' else opt.input_nc
@@ -40,7 +43,7 @@ class CombinedCuhkDataset(BaseDataset):
         if self.split != "train":
             anno = self.annotations[img_name]
             img = Image.open(anno["img_path"]).convert("RGB")
-            transform_params = get_params(self.opt, A.size)
+            transform_params = get_params(self.opt, img.size)
             A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
             img, target = A_transform(img, target)
             boxes = torch.as_tensor(anno["boxes"], dtype=torch.float32)
@@ -49,8 +52,10 @@ class CombinedCuhkDataset(BaseDataset):
             return img, target
         
         AB_path = self.AB_paths[index]
+        # print(f"CUHK Dataset image path {AB_path}")
         AB = Image.open(AB_path).convert('RGB')
-
+        
+        
         # Ensure image width is even for proper splitting
         w, h = AB.size
         assert w % 2 == 0, f"[ERROR] Image width {w} is not even, cannot split into A and B."
@@ -61,21 +66,24 @@ class CombinedCuhkDataset(BaseDataset):
         B = AB.crop((w2, 0, w, h))
         # print(A.size)
         # Apply the same transformation to both A and B
-        transform_params = get_params(self.opt, A.size)
-        A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
-        B_transform = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
+        # transform_params = get_params(self.opt, A.size)
+        # A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
+        # B_transform = get_transform(self.opt, transform_params, grayscale=(self.output_nc == 1))
         
-        A = A_transform(A)
-        B = B_transform(B)
+        # A = A_transform(A)
+        # B = B_transform(B)
 
         # Load bounding box annotations from JSON
         json_path = self.json_paths[index]
         bboxes = []
+        # print(f"path of file {json_path}")
         try:
             with open(json_path, 'r') as file:
                 if file.readable() and file.seek(0) or file.read(1):  # Check if file is not empty
                     file.seek(0)
                     bboxes = json.load(file)
+                    bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
+
                     
                 else:
                     print(f"[WARNING] Empty JSON file: {json_path}")
@@ -93,7 +101,14 @@ class CombinedCuhkDataset(BaseDataset):
             pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
         else: 
             print(img_name)
-        # print(f"Dataset Combined bboxs {file} {bboxes}")
+        target = {"img_name": img_name, "boxes": bboxes, "labels": pid}
+        if self.transforms is not None:
+            A, _ = self.transforms(A, target)
+            B, target = self.transforms(B, target)
+            
+        # process_single_image(img_name)
+        # process_image_tensor(img_name, AB, target["boxes"])
+
         return {
             'A': A,
             'B': B,
@@ -101,7 +116,7 @@ class CombinedCuhkDataset(BaseDataset):
             "img_name" :img_name,
             'A_paths': AB_path,
             'B_paths': AB_path,
-            'bbox': bboxes
+            'bbox': target["boxes"]
         }
 
     def __len__(self):
