@@ -116,7 +116,7 @@ class CombinedCuhkDataset(BaseDataset):
 
     def __len__(self):
         """Return the number of images in the dataset."""
-        return len(self.AB_paths)
+        return len(self.annotations)
     
     def _load_queries(self):
         # TestG50: a test protocol, 50 gallery images per query

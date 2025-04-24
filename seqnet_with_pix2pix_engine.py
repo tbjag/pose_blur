@@ -484,9 +484,7 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
         images, targets = to_device(images, targets, device)
         targets[0]['boxes'] =targets[0]['boxes'][0]
         targets[0]['labels'] = targets[0]['labels'][0]
-        # print(f"Target data  bboxs  {targets}")
-
-        # print(images, targets)
+        
         try:
             loss_dict = model_seqnet(images, targets)
         except Exception as e:
@@ -560,16 +558,13 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
         images, targets = to_device(images, targets, device)
         targets[0]['boxes'] =targets[0]['boxes'][0]
         targets[0]['labels'] = targets[0]['labels'][0]
-        # print(f"Target data  bboxs  {targets}")
-
-        # print(images, targets)
+        
         try:
             loss_dict = model_seqnet(images, targets)
         except Exception as e:
             print(e)
             print(targets)
             
-        # print(loss_dict)
         losses = sum(loss for loss in loss_dict.values())
 
         # reduce losses over all GPUs for logging purposes
