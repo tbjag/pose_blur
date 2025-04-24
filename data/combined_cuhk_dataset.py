@@ -30,6 +30,8 @@ class CombinedCuhkDataset(BaseDataset):
         self.split = split
         self.annotations = self._load_annotations()
         self.dir_AB = os.path.join(opt.dataroot, opt.phase)  # Standardized naming
+        # self.dir_AB = os.path.join(opt.dataroot, split)  # Standardized naming
+
         self.AB_paths = sorted(make_dataset(self.dir_AB, opt.max_dataset_size))  # Use existing helper
         self.json_paths = sorted(make_bbox(self.dir_AB, opt.max_dataset_size))
         self.transforms = build_transforms(self.split == 'train')
@@ -40,20 +42,21 @@ class CombinedCuhkDataset(BaseDataset):
 
     def __getitem__(self, index):
         """Return a preprocessed image pair (blurred, original) with bounding boxes."""
-        if self.split != "train":
-            anno = self.annotations[img_name]
-            img = Image.open(anno["img_path"]).convert("RGB")
-            transform_params = get_params(self.opt, img.size)
-            A_transform = get_transform(self.opt, transform_params, grayscale=(self.input_nc == 1))
-            img, target = A_transform(img, target)
-            boxes = torch.as_tensor(anno["boxes"], dtype=torch.float32)
-            labels = torch.as_tensor(anno["pids"], dtype=torch.int64)
-            target = {"img_name": anno["img_name"], "boxes": boxes, "labels": labels}
-            return img, target
-        
-        AB_path = self.AB_paths[index]
-        # print(f"CUHK Dataset image path {AB_path}")
-        AB = Image.open(AB_path).convert('RGB')
+        anno = self.annotations[index]
+        AB = Image.open(anno["img_path"]).convert("RGB")
+        AB_path = anno["img_path"]
+        json_path = anno["json_path"]
+        # if self.split != "train":
+        #     anno = self.annotations[index]
+        #     AB = Image.open(anno["img_path"]).convert("RGB")
+        #     json_path = anno["json_path"]
+
+        # else:
+        #     AB_path = self.AB_paths[index]
+        #     # print(f"CUHK Dataset image path {AB_path}")
+        #     AB = Image.open(AB_path).convert('RGB')
+        #     json_path = self.json_paths[index]
+
         
         
         # Ensure image width is even for proper splitting
@@ -74,7 +77,6 @@ class CombinedCuhkDataset(BaseDataset):
         # B = B_transform(B)
 
         # Load bounding box annotations from JSON
-        json_path = self.json_paths[index]
         bboxes = []
         # print(f"path of file {json_path}")
         try:
@@ -92,15 +94,8 @@ class CombinedCuhkDataset(BaseDataset):
         except Exception as e:
             print(f"[ERROR] Could not read JSON file {json_path}: {e}")
         img_name = os.path.basename(AB_path).split('.')[0]  # Get filename without extension
-        # print(self.annotations.keys())
-        pid = 5555  # Default value
-        # print(f"image name {img_name}")
-        # print(img_name in self.annotations)
-        if img_name in self.annotations:
-            anno = self.annotations[img_name]
-            pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
-        else: 
-            print(img_name)
+        pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
+
         target = {"img_name": img_name, "boxes": bboxes, "labels": pid}
         if self.transforms is not None:
             A, _ = self.transforms(A, target)
@@ -127,18 +122,20 @@ class CombinedCuhkDataset(BaseDataset):
         # TestG50: a test protocol, 50 gallery images per query
         protoc = loadmat(osp.join(self.root, "annotation/test/train_test/TestG50.mat"))
         protoc = protoc["TestG50"].squeeze()
-        queries = dict()
+        queries = []
         for item in protoc["Query"]:
             img_name = str(item["imname"][0, 0][0])
             img_key = img_name.split('.')[0]  # Get filename without extension
             roi = item["idlocate"][0, 0][0].astype(np.int32)
             roi[2:] += roi[:2]
-            queries[img_key] ={
+            queries.append({
                     "img_name": img_name,
-                    "img_path": osp.join(self.root,self.split, img_name),
+                    "img_path": osp.join(self.root, f"{img_key}.png"),
+                    "json_path":osp.join(self.root, f"{img_key}.json"),
+
                     "boxes": roi[np.newaxis, :],
                     "pids": np.array([-100]),  # dummy pid
-                }
+                })
             
         return queries
 
@@ -214,7 +211,7 @@ class CombinedCuhkDataset(BaseDataset):
                     box = box.squeeze().astype(np.int32)
                     set_box_pid(name_to_boxes[im_name], box, name_to_pids[im_name], index + 1)
 
-        annotations = {}
+        annotations = []
         imgs = self._load_split_img_names()
         for img_name in imgs:
             img_key = img_name.split('.')[0]  # Get filename without extension
@@ -222,12 +219,13 @@ class CombinedCuhkDataset(BaseDataset):
             boxes = name_to_boxes[img_name]
             boxes[:, 2:] += boxes[:, :2]  # (x1, y1, w, h) -> (x1, y1, x2, y2)
             pids = name_to_pids[img_name]
-            annotations[img_key] = {
+            annotations.append({
                     "img_name": img_name,
-                    "img_path": osp.join(self.root,self.split, img_name),
+                    "img_path": osp.join(self.root, f"{img_key}.png"),
+                    "json_path":osp.join(self.root, f"{img_key}.json"),
                     "boxes": boxes,
                     "pids": pids,
-                }
+                })
             
         return annotations
 

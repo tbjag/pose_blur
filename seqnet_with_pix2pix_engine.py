@@ -5,7 +5,7 @@ import torch
 import math
 import sys
 from copy import deepcopy
-
+import time
 
 import torch
 from torch.nn.utils import clip_grad_norm_
@@ -369,9 +369,165 @@ def save_tensor_as_jpg(tensor, filepath, denormalize=True):
     
     return filepath
 
+def test_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None):
+    model_seqnet.train()
+    metric_logger = MetricLogger(delimiter="  ")
+    metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
+    header = "Epoch: [{}]".format(epoch)
+
+    # warmup learning rate in the first epoch
+    if epoch == 0:
+        warmup_factor = 1.0 / 1000
+        # FIXME: min(1000, len(data_loader) - 1)
+        warmup_iters = len(data_loader) - 1
+        warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
+    
+    with open("test_file.txt", "w") as f:
+
+        for i, (data) in enumerate(data_loader):
+            # modeL_pix2pix.set_input(data)  # unpack data from data loader
+            # modeL_pix2pix.test()           # run inference
+            # visuals = modeL_pix2pix.get_current_visuals()  # get image results
+            # images = visuals['fake_B']
+            # save_tensor_as_jpg(images, "image.jpg")
+            
+            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+            
+            # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+            images = data['A']
+            targets = [targets]
+            # print(images.shape)
+            # exit()
+            images = [images[0]]
+            images, targets = to_device(images, targets, device)
+            targets[0]['boxes'] =targets[0]['boxes'][0]
+            targets[0]['labels'] = targets[0]['labels'][0]
+            if len(targets[0]['labels'].shape) !=1:
+                f.write(f"{targets}")
+
+def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch,visualizer, tfboard=None, wandb= False):
+    model_seqnet.train()
+    metric_logger = MetricLogger(delimiter="  ")
+    metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
+    header = "Epoch: [{}]".format(epoch)
+    dataset_size = len(data_loader)
+
+    # warmup learning rate in the first epoch
+    if epoch == 0:
+        warmup_factor = 1.0 / 1000
+        # FIXME: min(1000, len(data_loader) - 1)
+        warmup_iters = len(data_loader) - 1
+        warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
+    
+        for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):
+            epoch_start_time = time.time()  # timer for entire epoch
+            iter_data_time = time.time()    # timer for data loading per iteration
+            epoch_iter = 0                  # the number of training iterations in current epoch
+            visualizer.reset()              # reset the visualizer
+            modeL_pix2pix.update_learning_rate()    # update learning rates
+            
+            for i, data in enumerate(data_loader):
+                iter_start_time = time.time()  # timer for computation per iteration
+                if total_iters % opt.print_freq == 0:
+                    t_data = iter_start_time - iter_data_time
+
+                total_iters += opt.batch_size
+                epoch_iter += opt.batch_size
+                modeL_pix2pix.set_input(data)         # unpack data from dataset and apply preprocessing
+                
+                modeL_pix2pix.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+
+                if total_iters % opt.display_freq == 0:   # display images on visdom and save images to HTML
+                    save_result = total_iters % opt.update_html_freq == 0
+                    modeL_pix2pix.compute_visuals()
+                    visualizer.display_current_results(modeL_pix2pix.get_current_visuals(), epoch, save_result)
+
+                if total_iters % opt.print_freq == 0:    # print training losses and save logging information
+                    losses = modeL_pix2pix.get_current_losses()
+                    t_comp = (time.time() - iter_start_time) / opt.batch_size
+                    visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
+                    if opt.display_id > 0:
+                        visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
+
+                if total_iters % opt.save_latest_freq == 0:   # cache our latest model
+                    print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
+                    save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
+                    modeL_pix2pix.save_networks(save_suffix)
+
+                iter_data_time = time.time()
+                
+            if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
+                print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+                modeL_pix2pix.save_networks('latest')
+                modeL_pix2pix.save_networks(epoch)
+
+            print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
 
 
-def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None):
+    for i, (data) in enumerate(
+        metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
+    ):
+        modeL_pix2pix.set_input(data)  # unpack data from data loader
+        modeL_pix2pix.test()           # run inference
+        visuals = modeL_pix2pix.get_current_visuals()  # get image results
+        images = visuals['fake_B']
+        # save_tensor_as_jpg(images, "image.jpg")
+        
+        targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+        
+        # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+
+        targets = [targets]
+        # print(images.shape)
+        # exit()
+        images = [images[0]]
+        images, targets = to_device(images, targets, device)
+        targets[0]['boxes'] =targets[0]['boxes'][0]
+        targets[0]['labels'] = targets[0]['labels'][0]
+        # print(f"Target data  bboxs  {targets}")
+
+        # print(images, targets)
+        try:
+            loss_dict = model_seqnet(images, targets)
+        except Exception as e:
+            print(e)
+            print(targets)
+            
+        # print(loss_dict)
+        losses = sum(loss for loss in loss_dict.values())
+
+        # reduce losses over all GPUs for logging purposes
+        loss_dict_reduced = reduce_dict(loss_dict)
+        losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+        loss_value = losses_reduced.item()
+
+        if not math.isfinite(loss_value):
+            print(f"Loss is {loss_value}, stopping training")
+            print(loss_dict_reduced)
+            sys.exit(1)
+
+        optimizer.zero_grad()
+        if wandb:
+            wandb.log(loss_dict)
+        losses.backward()
+        if cfg.SOLVER.CLIP_GRADIENTS > 0:
+            clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
+        optimizer.step()
+
+        if epoch == 0:
+            warmup_scheduler.step()
+
+        metric_logger.update(loss=loss_value, **loss_dict_reduced)
+        metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        if tfboard:
+            iter = epoch * len(data_loader) + i
+            for k, v in loss_dict_reduced.items():
+                tfboard.add_scalars("train", {k: v}, iter)
+        avg_loss = metric_logger.meters["loss"].global_avg
+    return avg_loss
+
+
+def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None, wandb= False):
     model_seqnet.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -407,7 +563,12 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
         # print(f"Target data  bboxs  {targets}")
 
         # print(images, targets)
-        loss_dict = model_seqnet(images, targets)
+        try:
+            loss_dict = model_seqnet(images, targets)
+        except Exception as e:
+            print(e)
+            print(targets)
+            
         # print(loss_dict)
         losses = sum(loss for loss in loss_dict.values())
 
@@ -422,7 +583,8 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
             sys.exit(1)
 
         optimizer.zero_grad()
-        # wandb.log(loss_dict)
+        if wandb:
+            wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
@@ -464,7 +626,7 @@ def evaluate_performance(
         gallery_dets, gallery_feats = [], []
         for i, (data) in tqdm(enumerate(
             gallery_loader
-        ), ncols=0):
+        ), ncols=0, total=len(gallery_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
             visuals = model_pix2pix.get_current_visuals()  # get image results
@@ -508,7 +670,7 @@ def evaluate_performance(
         query_dets, query_feats = [], []
         for i, (data) in tqdm(enumerate(
             query_loader
-        ), ncols=0):
+        ), ncols=0, total=len(query_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
             visuals = model_pix2pix.get_current_visuals()  # get image results
@@ -542,7 +704,7 @@ def evaluate_performance(
         query_box_feats = []
         for i, (data) in tqdm(enumerate(
             query_loader
-        ), ncols=0):
+        ), ncols=0 , total=len(query_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
             visuals = model_pix2pix.get_current_visuals()  # get image results

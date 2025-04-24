@@ -8,7 +8,7 @@ from tabulate import tabulate
 
 import torch
 
-from seqnet_with_pix2pix_engine import  train_one_epoch,  evaluate_performance
+from seqnet_with_pix2pix_engine import  train_one_epoch,  evaluate_performance, test_one_epoch, train_one_epoch_combined
 
 
 # Import from SeqNet
@@ -53,7 +53,7 @@ def print_statistics(dataset):
     num_imgs = len(dataset.annotations)
     num_boxes = 0
     pid_set = set()
-    for i in dataset.annotations:
+    for i in range(len(dataset.annotations)):
         anno = dataset.annotations[i]
         num_boxes += anno["boxes"].shape[0]
         for pid in anno["pids"]:
@@ -99,7 +99,7 @@ def train_seqnet(opt, model_pix2pix):
     if opt.use_wandb:
         run = wandb.init(
         project="seqnet",
-        name="baseline-run",
+        name="fix-actually-running",
         config={
             "lr": cfg.SOLVER.BASE_LR,
             "epochs": cfg.SOLVER.MAX_EPOCHS,
@@ -113,10 +113,12 @@ def train_seqnet(opt, model_pix2pix):
 
     print("Loading data")
     train_loader = create_dataset(opt)
-    print_statistics(train_loader.dataset)
     gallery_loader, query_loader = create_dataset(opt,split="gallery"),  create_dataset(opt,split="query")
+
+    print_statistics(train_loader.dataset)
     print_statistics(gallery_loader.dataset)
     print_statistics(query_loader.dataset)
+    
     if opt.eval:
         assert opt.ckpt, "--ckpt must be specified when --eval enabled"
         resume_from_ckpt(opt.ckpt, model)
@@ -168,7 +170,18 @@ def train_seqnet(opt, model_pix2pix):
     print("Start training SeqNet")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
-        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard)
+        evaluate_performance(
+                model,
+                model_pix2pix,
+                gallery_loader,
+                query_loader,
+                device,
+                use_gt=cfg.EVAL_USE_GT,
+                use_cache=cfg.EVAL_USE_CACHE,
+                use_cbgm=cfg.EVAL_USE_CBGM,
+            )
+
+        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -260,7 +273,115 @@ def train_gan(opt):
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
 
 def combined_train(opt):
-    pass
+    """Train SeqNet model"""
+    cfg = get_default_cfg()
+    if opt.cfg_file:
+        cfg.merge_from_file(opt.cfg_file)
+    cfg.freeze()
+
+    device = torch.device(1)
+    if cfg.SEED >= 0:
+        set_random_seed(cfg.SEED)
+
+    print("Creating SeqNet model")
+    model = SeqNet(cfg)
+    model.to(device)
+        
+    model = create_model(opt)      # create a model given opt.model and other options
+    model.setup(opt)               # regular setup: load and print networks; create schedulers
+    visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
+    total_iters = 0                # the total number of training iterations
+
+
+    print("Loading data")
+    train_loader = create_dataset(opt)
+    gallery_loader, query_loader = create_dataset(opt,split="gallery"),  create_dataset(opt,split="query")
+
+    print_statistics(train_loader.dataset)
+    print_statistics(gallery_loader.dataset)
+    print_statistics(query_loader.dataset)
+    
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.SGD(
+        params,
+        lr=cfg.SOLVER.BASE_LR,
+        momentum=cfg.SOLVER.SGD_MOMENTUM,
+        weight_decay=cfg.SOLVER.WEIGHT_DECAY,
+    )
+
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=cfg.SOLVER.LR_DECAY_MILESTONES, gamma=0.1
+    )
+
+    start_epoch = 0
+    
+    # if opt.resume:
+    #     assert opt.ckpt, "--ckpt must be specified when --resume enabled"
+    #     start_epoch = resume_from_ckpt(opt.ckpt, model, optimizer, lr_scheduler) + 1
+
+    print("Creating output folder")
+    output_dir = cfg.OUTPUT_DIR
+    mkdir(output_dir)
+    path = osp.join(output_dir, "config.yaml")
+    with open(path, "w") as f:
+        f.write(cfg.dump())
+    print(f"Full config is saved to {path}")
+    
+    tfboard = None
+    if cfg.TF_BOARD:
+        from torch.utils.tensorboard import SummaryWriter
+        tf_log_path = osp.join(output_dir, "tf_log")
+        mkdir(tf_log_path)
+        tfboard = SummaryWriter(log_dir=tf_log_path)
+        print(f"TensorBoard files are saved to {tf_log_path}")
+
+    print("Start training SeqNet")
+    start_time = time.time()
+    for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
+        evaluate_performance(
+                model,
+                model_pix2pix,
+                gallery_loader,
+                query_loader,
+                device,
+                use_gt=cfg.EVAL_USE_GT,
+                use_cache=cfg.EVAL_USE_CACHE,
+                use_cbgm=cfg.EVAL_USE_CBGM,
+            )
+
+        train_one_epoch_combined(opt, cfg, model,model_pix2pix, optimizer, train_loader, device, epoch,visualizer, tfboard,wandb=opt.use_wandb)
+        lr_scheduler.step()
+
+        if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
+            evaluate_performance(
+                model,
+                model_pix2pix,
+                gallery_loader,
+                query_loader,
+                device,
+                use_gt=cfg.EVAL_USE_GT,
+                use_cache=cfg.EVAL_USE_CACHE,
+                use_cbgm=cfg.EVAL_USE_CBGM,
+            )
+
+        if (epoch + 1) % cfg.CKPT_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
+            save_on_master(
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "lr_scheduler": lr_scheduler.state_dict(),
+                    "epoch": epoch,
+                },
+                osp.join(output_dir, f"epoch_{epoch}.pth"),
+            )
+
+    if tfboard:
+        tfboard.close()
+    total_time = time.time() - start_time
+    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    print(f"Total training time {total_time_str}")
+
 
 if __name__ == '__main__':
     
