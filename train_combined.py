@@ -89,7 +89,7 @@ def train_seqnet(opt, model_pix2pix):
         cfg.merge_from_file(opt.cfg_file)
     cfg.freeze()
 
-    device = torch.device(1)
+    device = torch.device(0)
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 
@@ -99,7 +99,7 @@ def train_seqnet(opt, model_pix2pix):
     if opt.use_wandb:
         run = wandb.init(
         project="seqnet",
-        name="fix-actually-running",
+        name="dataset_fixed-actually-running",
         config={
             "lr": cfg.SOLVER.BASE_LR,
             "epochs": cfg.SOLVER.MAX_EPOCHS,
@@ -170,18 +170,19 @@ def train_seqnet(opt, model_pix2pix):
     print("Start training SeqNet")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
-        evaluate_performance(
-                model,
-                model_pix2pix,
-                gallery_loader,
-                query_loader,
-                device,
-                use_gt=cfg.EVAL_USE_GT,
-                use_cache=cfg.EVAL_USE_CACHE,
-                use_cbgm=cfg.EVAL_USE_CBGM,
-            )
+        
+        # evaluate_performance(
+        #         model,
+        #         model_pix2pix,
+        #         gallery_loader,
+        #         query_loader,
+        #         device,
+        #         use_gt=cfg.EVAL_USE_GT,
+        #         use_cache=cfg.EVAL_USE_CACHE,
+        #         use_cbgm=cfg.EVAL_USE_CBGM,
+        #     )
 
-        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, wandb=opt.use_wandb)
+        test_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, use_wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -284,13 +285,29 @@ def combined_train(opt):
         set_random_seed(cfg.SEED)
 
     print("Creating SeqNet model")
-    model = SeqNet(cfg)
-    model.to(device)
+    
+    model_seqnet = SeqNet(cfg)
+    model_seqnet.to(device)
         
-    model = create_model(opt)      # create a model given opt.model and other options
-    model.setup(opt)               # regular setup: load and print networks; create schedulers
+    model_pix2pix = create_model(opt)      # create a model given opt.model and other options
+    model_pix2pix.setup(opt)               # regular setup: load and print networks; create schedulers
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
+    
+    if opt.use_wandb:
+        run = wandb.init(
+        project="seqnet",
+        name=opt.name,
+        config={
+            "lr": cfg.SOLVER.BASE_LR,
+            "epochs": cfg.SOLVER.MAX_EPOCHS,
+            "optimizer": "SGD",
+            "momentum": cfg.SOLVER.SGD_MOMENTUM,
+            "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+            "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+        }
+    )
+
 
 
     print("Loading data")
@@ -302,7 +319,7 @@ def combined_train(opt):
     print_statistics(query_loader.dataset)
     
 
-    params = [p for p in model.parameters() if p.requires_grad]
+    params = [p for p in model_seqnet.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(
         params,
         lr=cfg.SOLVER.BASE_LR,
@@ -316,10 +333,6 @@ def combined_train(opt):
 
     start_epoch = 0
     
-    # if opt.resume:
-    #     assert opt.ckpt, "--ckpt must be specified when --resume enabled"
-    #     start_epoch = resume_from_ckpt(opt.ckpt, model, optimizer, lr_scheduler) + 1
-
     print("Creating output folder")
     output_dir = cfg.OUTPUT_DIR
     mkdir(output_dir)
@@ -339,23 +352,13 @@ def combined_train(opt):
     print("Start training SeqNet")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
-        evaluate_performance(
-                model,
-                model_pix2pix,
-                gallery_loader,
-                query_loader,
-                device,
-                use_gt=cfg.EVAL_USE_GT,
-                use_cache=cfg.EVAL_USE_CACHE,
-                use_cbgm=cfg.EVAL_USE_CBGM,
-            )
-
-        train_one_epoch_combined(opt, cfg, model,model_pix2pix, optimizer, train_loader, device, epoch,visualizer, tfboard,wandb=opt.use_wandb)
+        
+        train_one_epoch_combined(opt, cfg, model_seqnet,model_pix2pix, optimizer, train_loader, device, epoch,visualizer, tfboard,wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
             evaluate_performance(
-                model,
+                model_seqnet,
                 model_pix2pix,
                 gallery_loader,
                 query_loader,
@@ -368,18 +371,25 @@ def combined_train(opt):
         if (epoch + 1) % cfg.CKPT_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
             save_on_master(
                 {
-                    "model": model.state_dict(),
+                    "model": model_seqnet.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "lr_scheduler": lr_scheduler.state_dict(),
                     "epoch": epoch,
                 },
                 osp.join(output_dir, f"epoch_{epoch}.pth"),
             )
+            
+        if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
+            print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+            model_pix2pix.save_networks('latest')
+            model_pix2pix.save_networks(epoch)
 
     if tfboard:
         tfboard.close()
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    if opt.use_wandb:
+        run.finish()
     print(f"Total training time {total_time_str}")
 
 
@@ -388,19 +398,22 @@ if __name__ == '__main__':
     # options = TrainOptions().parse()
     # train_gan(options)
     
-    options = TestOptions().parse()
-    options.num_threads = 0   # test code only supports num_threads = 0
-    options.batch_size = 1    # test code only supports batch_size = 1
-    options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
-    model_pix2pix = create_model(options)      # create a model given opt.model and other options
+    # options = TestOptions().parse()
+    # options.num_threads = 0   # test code only supports num_threads = 0
+    # options.batch_size = 1    # test code only supports batch_size = 1
+    # options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    # options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    # options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
     # model_pix2pix = create_model(options)      # create a model given opt.model and other options
+    # # model_pix2pix = create_model(options)      # create a model given opt.model and other options
 
-    model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
-    model_pix2pix.eval()
+    # model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+    # model_pix2pix.eval()
     
-    train_seqnet(options, model_pix2pix)
+    # train_seqnet(options, model_pix2pix)
+    
+    options = TrainOptions().parse()
+    combined_train(options)
 
     
     

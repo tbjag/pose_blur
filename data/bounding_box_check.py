@@ -107,6 +107,7 @@ def draw_bounding_boxes(image, bboxes):
                 draw.rectangle([(x1+t, y1+t), (x2-t, y2-t)], outline=COLOR)
             draw.text((x1, y1 - 12), f"#{i}: {x1},{y1},{x2},{y2}", fill=COLOR)
         except Exception as e:
+            print(bbox)
             logging.warning(f"Error drawing bbox: {str(e)}")
     return draw_image
 
@@ -137,10 +138,11 @@ def process_single_image(image_name):
         print(f"No bounding boxes found in {json_path}")
 
     result_image = draw_bounding_boxes(original_image, bboxes)
+    print(result_image)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_path = os.path.join(OUTPUT_DIR, f"{image_name}_checked.png")
     result_image.save(output_path)
-    print(f"Saved result with {len(bboxes)} bounding boxes to {output_path}")
+    # print(f"Saved result with {len(bboxes)} bounding boxes to {output_path}")
     
 def process_image_tensor(image_name, image, bboxes):
     image = tensor_to_pil(image)
@@ -153,7 +155,7 @@ def process_image_tensor(image_name, image, bboxes):
 
 if __name__ == "__main__":
     print("Enter the image filename (without .png):")
-    image_name = input().strip()
+    image_name = "s8389"
     if image_name:
         process_single_image(image_name)
     else:

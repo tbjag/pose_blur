@@ -151,3 +151,20 @@ class Pix2PixfftnomaskModel(BaseModel):
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # update G's weights
+        
+    def loss_G(self):
+        # update G
+        fake_AB = torch.cat((self.real_A, self.fake_B), 1)
+        pred_fake = self.netD(fake_AB)
+        self.loss_G_GAN = self.criterionGAN(pred_fake, True)
+        # Second, G(A) = B
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
+
+        self.loss_G_freq = self.criterionFreq(self.real_B, self.fake_B, self.bounding_boxes) * self.opt.lambda_freq
+        
+        # combine loss and calculate gradients
+        #self.loss_G = self.loss_G_GAN + self.loss_G_L1
+
+        #combine all losses, including the freq loss
+        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_freq
+        return self.loss_G
