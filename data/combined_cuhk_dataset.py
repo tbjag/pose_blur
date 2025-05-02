@@ -85,14 +85,15 @@ class CombinedCuhkDataset(BaseDataset):
                     file.seek(0)
                     bboxes = json.load(file)
                     bboxes = torch.as_tensor(bboxes, dtype=torch.float32)
-
-                    
                 else:
                     print(f"[WARNING] Empty JSON file: {json_path}")
         except json.JSONDecodeError:
             print(f"[ERROR] Malformed JSON file: {json_path}")
         except Exception as e:
             print(f"[ERROR] Could not read JSON file {json_path}: {e}")
+        
+        if self.split == "query":
+            bboxes = anno["boxes"]
         img_name = os.path.basename(AB_path).split('.')[0]  # Get filename without extension
         pid = torch.as_tensor(anno["pids"], dtype=torch.int64) #if len(self.annotations[img_name]["pids"]) > 0 else 5555
 

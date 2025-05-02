@@ -353,7 +353,7 @@ def combined_train(opt):
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
         
-        train_one_epoch_combined(opt, cfg, model_seqnet,model_pix2pix, optimizer, train_loader, device, epoch,visualizer, tfboard,wandb=opt.use_wandb)
+        train_one_epoch_combined(opt, cfg, model_seqnet,model_pix2pix, optimizer, train_loader, device, epoch,visualizer, tfboard,use_wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -398,22 +398,22 @@ if __name__ == '__main__':
     # options = TrainOptions().parse()
     # train_gan(options)
     
-    # options = TestOptions().parse()
-    # options.num_threads = 0   # test code only supports num_threads = 0
-    # options.batch_size = 1    # test code only supports batch_size = 1
-    # options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    # options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    # options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    options = TestOptions().parse()
+    options.num_threads = 0   # test code only supports num_threads = 0
+    options.batch_size = 1    # test code only supports batch_size = 1
+    options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+    options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+    options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+    model_pix2pix = create_model(options)      # create a model given opt.model and other options
     # model_pix2pix = create_model(options)      # create a model given opt.model and other options
-    # # model_pix2pix = create_model(options)      # create a model given opt.model and other options
 
-    # model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
-    # model_pix2pix.eval()
+    model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+    model_pix2pix.eval()
     
-    # train_seqnet(options, model_pix2pix)
+    train_seqnet(options, model_pix2pix)
     
-    options = TrainOptions().parse()
-    combined_train(options)
+    # options = TrainOptions().parse()
+    # combined_train(options)
 
     
     

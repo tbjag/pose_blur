@@ -694,45 +694,45 @@ def evaluate_performance(
         query_box_feats = eval_cache["query_box_feats"]
     else:
         gallery_dets, gallery_feats = [], []
-        for i, (data) in tqdm(enumerate(
-            gallery_loader
-        ), ncols=0, total=len(gallery_loader)):
-            model_pix2pix.set_input(data)  # unpack data from data loader
-            model_pix2pix.test()           # run inference
-            images = model_pix2pix.fake_B.detach().clone()
-            # save_tensor_as_jpg(images, "image.jpg")
+        # for i, (data) in tqdm(enumerate(
+        #     gallery_loader
+        # ), ncols=0, total=len(gallery_loader)):
+        #     model_pix2pix.set_input(data)  # unpack data from data loader
+        #     model_pix2pix.test()           # run inference
+        #     images = model_pix2pix.fake_B.detach().clone()
+        #     # save_tensor_as_jpg(images, "image.jpg")
             
-            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+        #     targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
             
-            # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+        #     # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
 
-            targets = [targets]
-            # print(images.shape)
-            # exit()
-            images = [images[0]]
-            images, targets = to_device(images, targets, device)
-            targets[0]['boxes'] =targets[0]['boxes'][0]
-            targets[0]['labels'] = targets[0]['labels'][0]
+        #     targets = [targets]
+        #     # print(images.shape)
+        #     # exit()
+        #     images = [images[0]]
+        #     images, targets = to_device(images, targets, device)
+        #     targets[0]['boxes'] =targets[0]['boxes'][0]
+        #     targets[0]['labels'] = targets[0]['labels'][0]
 
-            if not use_gt:
-                outputs = model_seqnet(images)
-            else:
-                boxes = targets[0]["boxes"]
-                n_boxes = boxes.size(0)
-                embeddings = model_seqnet(images, targets)
-                outputs = [
-                    {
-                        "boxes": boxes,
-                        "embeddings": torch.cat(embeddings),
-                        "labels": torch.ones(n_boxes).to(device),
-                        "scores": torch.ones(n_boxes).to(device),
-                    }
-                ]
+        #     if not use_gt:
+        #         outputs = model_seqnet(images)
+        #     else:
+        #         boxes = targets[0]["boxes"]
+        #         n_boxes = boxes.size(0)
+        #         embeddings = model_seqnet(images, targets)
+        #         outputs = [
+        #             {
+        #                 "boxes": boxes,
+        #                 "embeddings": torch.cat(embeddings),
+        #                 "labels": torch.ones(n_boxes).to(device),
+        #                 "scores": torch.ones(n_boxes).to(device),
+        #             }
+        #         ]
 
-            for output in outputs:
-                box_w_scores = torch.cat([output["boxes"], output["scores"].unsqueeze(1)], dim=1)
-                gallery_dets.append(box_w_scores.cpu().numpy())
-                gallery_feats.append(output["embeddings"].cpu().numpy())
+        #     for output in outputs:
+        #         box_w_scores = torch.cat([output["boxes"], output["scores"].unsqueeze(1)], dim=1)
+        #         gallery_dets.append(box_w_scores.cpu().numpy())
+        #         gallery_feats.append(output["embeddings"].cpu().numpy())
 
         # regarding query image as gallery to detect all people
         # i.e. query person + surrounding people (context information)
