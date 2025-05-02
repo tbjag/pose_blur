@@ -152,7 +152,7 @@ class Pix2PixfftnomaskModel(BaseModel):
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # update G's weights
         
-    def loss_G(self):
+    def get_loss(self):
         # update G
         fake_AB = torch.cat((self.real_A, self.fake_B), 1)
         pred_fake = self.netD(fake_AB)

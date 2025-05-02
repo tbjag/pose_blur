@@ -182,7 +182,7 @@ def train_seqnet(opt, model_pix2pix):
         #         use_cbgm=cfg.EVAL_USE_CBGM,
         #     )
 
-        test_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, use_wandb=opt.use_wandb)
+        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, use_wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -280,7 +280,7 @@ def combined_train(opt):
         cfg.merge_from_file(opt.cfg_file)
     cfg.freeze()
 
-    device = torch.device(1)
+    device = torch.device(0)
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 

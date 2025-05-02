@@ -448,7 +448,7 @@ def test_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, dev
             return avg_loss
         
 
-def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch,visualizer, tfboard=None, wandb= False):
+def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch,visualizer, tfboard=None, use_wandb= False):
     """
     Combined training function for SeqNet and Pix2Pix
     
@@ -517,10 +517,7 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
         modeL_pix2pix.optimizer_D.step()          # update D's weights
         
         
-        modeL_pix2pix.set_requires_grad(modeL_pix2pix.netD, False)  # D requires no gradients when optimizing G
-        modeL_pix2pix.optimizer_G.zero_grad()        # set G's gradients to zero
-        losses_G = modeL_pix2pix.loss_G()   # calculate loss functions, get gradients, update network weights
-        images = modeL_pix2pix.fake_B
+        images = modeL_pix2pix.fake_B.detach().clone()
         
         #getting input for seqnet model
         targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
@@ -530,8 +527,16 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
         targets[0]['boxes'] =targets[0]['boxes'][0]
         targets[0]['labels'] = targets[0]['labels'][0]
         
+        
+        
+        
         # running seqnet model
         loss_dict = model_seqnet(images, targets)
+        
+        modeL_pix2pix.set_requires_grad(modeL_pix2pix.netD, False)  # D requires no gradients when optimizing G
+        modeL_pix2pix.optimizer_G.zero_grad()        # set G's gradients to zero
+        losses_G = modeL_pix2pix.get_loss()   # calculate loss functions, get gradients, update network weights
+
             
         losses_seq = sum(loss for loss in loss_dict.values())
         
@@ -548,7 +553,7 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
             sys.exit(1)
 
         optimizer.zero_grad()
-        if wandb:
+        if use_wandb:
             wandb.log(loss_dict)
         
         total_losses.backward()
@@ -694,8 +699,7 @@ def evaluate_performance(
         ), ncols=0, total=len(gallery_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
-            visuals = model_pix2pix.get_current_visuals()  # get image results
-            images = visuals['fake_B']
+            images = model_pix2pix.fake_B.detach().clone()
             # save_tensor_as_jpg(images, "image.jpg")
             
             targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
@@ -738,8 +742,8 @@ def evaluate_performance(
         ), ncols=0, total=len(query_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
-            visuals = model_pix2pix.get_current_visuals()  # get image results
-            images = visuals['fake_B']
+            images = model_pix2pix.fake_B.detach().clone()
+
             # save_tensor_as_jpg(images, "image.jpg")
             
             targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
@@ -772,8 +776,8 @@ def evaluate_performance(
         ), ncols=0 , total=len(query_loader)):
             model_pix2pix.set_input(data)  # unpack data from data loader
             model_pix2pix.test()           # run inference
-            visuals = model_pix2pix.get_current_visuals()  # get image results
-            images = visuals['fake_B']
+            images = model_pix2pix.fake_B.detach().clone()
+
             # save_tensor_as_jpg(images, "image.jpg")
             
             targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
