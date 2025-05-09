@@ -153,7 +153,7 @@ def eval_search_cuhk(
     aps = []
     accs = []
     topk = [1, 5, 10]
-    ret = {"image_root": gallery_dataset.img_prefix, "results": []}
+    ret = {"image_root": gallery_dataset.root, "results": []}
     for i in range(len(query_dataset)):
         y_true, y_score = [], []
         imgs, rois = [], []
@@ -369,83 +369,6 @@ def save_tensor_as_jpg(tensor, filepath, denormalize=True):
     
     return filepath
 
-def test_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None,  use_wandb= False):
-    model_seqnet.train()
-    metric_logger = MetricLogger(delimiter="  ")
-    metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
-    header = "Epoch: [{}]".format(epoch)
-
-    # warmup learning rate in the first epoch
-    if epoch == 0:
-        warmup_factor = 1.0 / 1000
-        # FIXME: min(1000, len(data_loader) - 1)
-        warmup_iters = len(data_loader) - 1
-        warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
-    
-    with open("test_file.txt", "w") as f:
-            for i, (data) in enumerate(
-                data_loader
-            ):
-                if i < 10080:
-                    continue
-                modeL_pix2pix.set_input(data)  # unpack data from data loader
-                modeL_pix2pix.test()           # run inference
-                images = modeL_pix2pix.fake_B
-                # save_tensor_as_jpg(images, "image.jpg")
-                
-                targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
-                
-                # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
-
-                targets = [targets]
-                # print(images.shape)
-                # exit()
-                images = [images[0]]
-                images, targets = to_device(images, targets, device)
-                targets[0]['boxes'] =targets[0]['boxes'][0]
-                targets[0]['labels'] = targets[0]['labels'][0]
-                
-                
-                f.write(f"{targets}")
-
-                
-                try:
-                    loss_dict = model_seqnet(images, targets)
-                except Exception as e:
-                    print(e)
-                    print(targets)
-                    
-                losses = sum(loss for loss in loss_dict.values())
-                print(f"{i} {losses}")
-                # reduce losses over all GPUs for logging purposes
-                loss_dict_reduced = reduce_dict(loss_dict)
-                losses_reduced = sum(loss for loss in loss_dict_reduced.values())
-                loss_value = losses_reduced.item()
-
-                if not math.isfinite(loss_value):
-                    print(f"Loss is {loss_value}, stopping training")
-                    print(loss_dict_reduced)
-                    sys.exit(1)
-
-                optimizer.zero_grad()
-                if use_wandb:
-                    wandb.log(loss_dict)
-                losses.backward()
-                if cfg.SOLVER.CLIP_GRADIENTS > 0:
-                    clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
-                optimizer.step()
-
-                if epoch == 0:
-                    warmup_scheduler.step()
-
-                metric_logger.update(loss=loss_value, **loss_dict_reduced)
-                metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                if tfboard:
-                    iter = epoch * len(data_loader) + i
-                    for k, v in loss_dict_reduced.items():
-                        tfboard.add_scalars("train", {k: v}, iter)
-                avg_loss = metric_logger.meters["loss"].global_avg
-            return avg_loss
         
 
 def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch,visualizer, tfboard=None, use_wandb= False):
@@ -495,6 +418,7 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
     epoch_iter = 0                  # the number of training iterations in current epoch
     visualizer.reset()              # reset the visualizer
     modeL_pix2pix.update_learning_rate()    # update learning rates
+    t_data = epoch_start_time - iter_data_time # error with train_one_epoch not keeping t_data value
     
     for i, (data) in enumerate(
         metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
@@ -511,11 +435,12 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
         
         modeL_pix2pix.forward()                   # compute fake images: G(A)
         # update D
+        
         modeL_pix2pix.set_requires_grad(modeL_pix2pix.netD, True)  # enable backprop for D
         modeL_pix2pix.optimizer_D.zero_grad()     # set D's gradients to zero
         modeL_pix2pix.backward_D()                # calculate gradients for D
         modeL_pix2pix.optimizer_D.step()          # update D's weights
-        
+    
         
         images = modeL_pix2pix.fake_B.detach().clone()
         
@@ -543,7 +468,20 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
         total_losses = losses_seq + losses_G
 
         # reduce losses over all GPUs for logging purposes
+        if use_wandb:
+            wandb.log(loss_dict)
+            
         loss_dict_reduced = reduce_dict(loss_dict)
+        
+        loss_dict_reduced['loss_box_reid'] *= opt.lw_box_reid
+        loss_dict_reduced['loss_rpn_reg'] *= opt.lw_rpn_reg
+        loss_dict_reduced['loss_rpn_cls'] *= opt.lw_rpn_cls
+        loss_dict_reduced['loss_proposal_reg'] *= opt.lw_proposal_reg
+        loss_dict_reduced['loss_proposal_cls'] *= opt.lw_proposal_cls
+        loss_dict_reduced['loss_box_reg'] *= opt.lw_box_reg
+        loss_dict_reduced['loss_box_cls'] *= opt.lw_box_cls
+        
+
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
         loss_value = losses_reduced.item()
 
@@ -553,15 +491,15 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
             sys.exit(1)
 
         optimizer.zero_grad()
-        if use_wandb:
-            wandb.log(loss_dict)
+       
         
         total_losses.backward()
         
-        modeL_pix2pix.optimizer_G.step()             # update G's weights
         
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
+
+        modeL_pix2pix.optimizer_G.step()             # update G's weights
         optimizer.step()
 
         if epoch == 0:
@@ -601,7 +539,7 @@ def train_one_epoch_combined(opt,cfg, model_seqnet, modeL_pix2pix, optimizer, da
     return avg_loss
 
 
-def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None, use_wandb= False):
+def train_one_epoch(opt, cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, device, epoch, tfboard=None, use_wandb= False):
     model_seqnet.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -644,6 +582,19 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = reduce_dict(loss_dict)
+        if use_wandb:
+            wandb.log(loss_dict)
+            
+        loss_dict_reduced = reduce_dict(loss_dict)
+        
+        loss_dict_reduced['loss_box_reid'] *= opt.lw_box_reid
+        loss_dict_reduced['loss_rpn_reg'] *= opt.lw_rpn_reg
+        loss_dict_reduced['loss_rpn_cls'] *= opt.lw_rpn_cls
+        loss_dict_reduced['loss_proposal_reg'] *= opt.lw_proposal_reg
+        loss_dict_reduced['loss_proposal_cls'] *= opt.lw_proposal_cls
+        loss_dict_reduced['loss_box_reg'] *= opt.lw_box_reg
+        loss_dict_reduced['loss_box_cls'] *= opt.lw_box_cls
+
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
         loss_value = losses_reduced.item()
 
@@ -653,8 +604,6 @@ def train_one_epoch(cfg, model_seqnet, modeL_pix2pix, optimizer, data_loader, de
             sys.exit(1)
 
         optimizer.zero_grad()
-        if use_wandb:
-            wandb.log(loss_dict)
         losses.backward()
         if cfg.SOLVER.CLIP_GRADIENTS > 0:
             clip_grad_norm_(model_seqnet.parameters(), cfg.SOLVER.CLIP_GRADIENTS)
@@ -694,45 +643,45 @@ def evaluate_performance(
         query_box_feats = eval_cache["query_box_feats"]
     else:
         gallery_dets, gallery_feats = [], []
-        # for i, (data) in tqdm(enumerate(
-        #     gallery_loader
-        # ), ncols=0, total=len(gallery_loader)):
-        #     model_pix2pix.set_input(data)  # unpack data from data loader
-        #     model_pix2pix.test()           # run inference
-        #     images = model_pix2pix.fake_B.detach().clone()
-        #     # save_tensor_as_jpg(images, "image.jpg")
+        for i, (data) in tqdm(enumerate(
+            gallery_loader
+        ), ncols=0, total=len(gallery_loader)):
+            model_pix2pix.set_input(data)  # unpack data from data loader
+            model_pix2pix.test()           # run inference
+            images = model_pix2pix.fake_B.detach().clone()
+            # save_tensor_as_jpg(images, "image.jpg")
             
-        #     targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
+            targets = {"img_name": data["img_name"], "boxes": torch.as_tensor(data['bbox'], dtype=torch.float32), "labels": data["labels"]}
             
-        #     # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
+            # targets = {"img_name": data["img_name"], "boxes": data['bbox'], "labels": data["labels"]}
 
-        #     targets = [targets]
-        #     # print(images.shape)
-        #     # exit()
-        #     images = [images[0]]
-        #     images, targets = to_device(images, targets, device)
-        #     targets[0]['boxes'] =targets[0]['boxes'][0]
-        #     targets[0]['labels'] = targets[0]['labels'][0]
+            targets = [targets]
+            # print(images.shape)
+            # exit()
+            images = [images[0]]
+            images, targets = to_device(images, targets, device)
+            targets[0]['boxes'] =targets[0]['boxes'][0]
+            targets[0]['labels'] = targets[0]['labels'][0]
 
-        #     if not use_gt:
-        #         outputs = model_seqnet(images)
-        #     else:
-        #         boxes = targets[0]["boxes"]
-        #         n_boxes = boxes.size(0)
-        #         embeddings = model_seqnet(images, targets)
-        #         outputs = [
-        #             {
-        #                 "boxes": boxes,
-        #                 "embeddings": torch.cat(embeddings),
-        #                 "labels": torch.ones(n_boxes).to(device),
-        #                 "scores": torch.ones(n_boxes).to(device),
-        #             }
-        #         ]
+            if not use_gt:
+                outputs = model_seqnet(images)
+            else:
+                boxes = targets[0]["boxes"]
+                n_boxes = boxes.size(0)
+                embeddings = model_seqnet(images, targets)
+                outputs = [
+                    {
+                        "boxes": boxes,
+                        "embeddings": torch.cat(embeddings),
+                        "labels": torch.ones(n_boxes).to(device),
+                        "scores": torch.ones(n_boxes).to(device),
+                    }
+                ]
 
-        #     for output in outputs:
-        #         box_w_scores = torch.cat([output["boxes"], output["scores"].unsqueeze(1)], dim=1)
-        #         gallery_dets.append(box_w_scores.cpu().numpy())
-        #         gallery_feats.append(output["embeddings"].cpu().numpy())
+            for output in outputs:
+                box_w_scores = torch.cat([output["boxes"], output["scores"].unsqueeze(1)], dim=1)
+                gallery_dets.append(box_w_scores.cpu().numpy())
+                gallery_feats.append(output["embeddings"].cpu().numpy())
 
         # regarding query image as gallery to detect all people
         # i.e. query person + surrounding people (context information)

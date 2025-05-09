@@ -77,21 +77,41 @@ class RandomHorizontalFlip:
     def __init__(self, prob=0.5):
         self.prob = prob
 
-    def __call__(self, image, target):
+    def __call__(self, images :list, target):
+        output = []
         if random.random() < self.prob:
-            height, width = image.shape[-2:]
-            image = image.flip(-1)
-            bbox = target["boxes"]
-            bbox[:, [0, 2]] = width - bbox[:, [2, 0]]
-            target["boxes"] = bbox
-        return image, target
+            if type(images) is list:
+                for image in images:
+                    height, width = image.shape[-2:]
+                    image = image.flip(-1)
+                    bbox = target["boxes"]
+                    bbox[:, [0, 2]] = width - bbox[:, [2, 0]]
+                    target["boxes"] = bbox
+                    output.append(image)
+                return output, target
+            else:
+                height, width = images.shape[-2:]
+                images = images.flip(-1)
+                bbox = target["boxes"]
+                bbox[:, [0, 2]] = width - bbox[:, [2, 0]]
+                target["boxes"] = bbox
+                return images, target
+        return images, target
+                
 
 
 class ToTensor:
-    def __call__(self, image, target):
+    def __call__(self, images, target):
         # convert [0, 255] to [0, 1]
-        image = F.to_tensor(image)
-        return image, target
+        if type(images) is list: 
+            output = []
+            for image in images:
+                image = F.to_tensor(image)
+                output.append(image)
+            return output, target
+        else:
+            images = F.to_tensor(images)
+            return images, target
 
 
 def build_transforms(is_train):

@@ -57,6 +57,18 @@ class BaseOptions():
         # wandb parameters
         parser.add_argument('--use_wandb', action='store_true', help='if specified, then init wandb logging')
         parser.add_argument('--wandb_project_name', type=str, default='CycleGAN-and-pix2pix', help='specify wandb project name')
+        parser.add_argument(
+            "--resume_seqnet", action="store_true", help="Resume from the specified checkpoint."
+        )
+        parser.add_argument("--ckpt", help="Path to checkpoint to resume or evaluate.")
+        parser.add_argument('--lw_rpn_reg', type=float, default=1.0, help='Loss weight for RPN regression')
+        parser.add_argument('--lw_rpn_cls', type=float, default=1.0, help='Loss weight for RPN classification')
+        parser.add_argument('--lw_proposal_reg', type=float, default=1.0, help='Loss weight for proposal regression')
+        parser.add_argument('--lw_proposal_cls', type=float, default=1.0, help='Loss weight for proposal classification')
+        parser.add_argument('--lw_box_reg', type=float, default=1.0, help='Loss weight for box regression')
+        parser.add_argument('--lw_box_cls', type=float, default=1.0, help='Loss weight for box classification')
+        parser.add_argument('--lw_box_reid', type=float, default=1.0, help='Loss weight for ReID loss')
+
         self.initialized = True
         return parser
 

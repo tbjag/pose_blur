@@ -2,6 +2,9 @@
 data/mnist_all/
 output_checked/
 exp_cuhk_2
+exp_cuhk
+vis/
+trained_seqnet
 
 data/mnist_blur_pairs/
 data/MNIST/*

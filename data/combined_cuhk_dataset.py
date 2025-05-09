@@ -99,8 +99,10 @@ class CombinedCuhkDataset(BaseDataset):
 
         target = {"img_name": img_name, "boxes": bboxes, "labels": pid}
         if self.transforms is not None:
-            A, _ = self.transforms(A, target)
-            B, target = self.transforms(B, target)
+            AB = [A,B]
+            # print(AB)
+            [A, B], target = self.transforms(AB, target)
+            # B, target = self.transforms(B, target)
             
         # process_single_image(img_name)
         # process_image_tensor(img_name, AB, target["boxes"])

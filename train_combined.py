@@ -8,7 +8,7 @@ from tabulate import tabulate
 
 import torch
 
-from seqnet_with_pix2pix_engine import  train_one_epoch,  evaluate_performance, test_one_epoch, train_one_epoch_combined
+from seqnet_with_pix2pix_engine import  train_one_epoch,  evaluate_performance,  train_one_epoch_combined
 
 
 # Import from SeqNet
@@ -89,7 +89,7 @@ def train_seqnet(opt, model_pix2pix):
         cfg.merge_from_file(opt.cfg_file)
     cfg.freeze()
 
-    device = torch.device(0)
+    device = torch.device(1)
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 
@@ -99,7 +99,7 @@ def train_seqnet(opt, model_pix2pix):
     if opt.use_wandb:
         run = wandb.init(
         project="seqnet",
-        name="dataset_fixed-actually-running",
+        name="pretrained_seqnet_zero_realid_fixed_wandb",
         config={
             "lr": cfg.SOLVER.BASE_LR,
             "epochs": cfg.SOLVER.MAX_EPOCHS,
@@ -147,9 +147,9 @@ def train_seqnet(opt, model_pix2pix):
 
     start_epoch = 0
     
-    # if opt.resume:
-    #     assert opt.ckpt, "--ckpt must be specified when --resume enabled"
-    #     start_epoch = resume_from_ckpt(opt.ckpt, model, optimizer, lr_scheduler) + 1
+    if opt.resume_seqnet:
+        assert opt.ckpt, "--ckpt must be specified when --resume enabled"
+        start_epoch = resume_from_ckpt(opt.ckpt, model) + 1
 
     print("Creating output folder")
     output_dir = cfg.OUTPUT_DIR
@@ -171,18 +171,7 @@ def train_seqnet(opt, model_pix2pix):
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
         
-        # evaluate_performance(
-        #         model,
-        #         model_pix2pix,
-        #         gallery_loader,
-        #         query_loader,
-        #         device,
-        #         use_gt=cfg.EVAL_USE_GT,
-        #         use_cache=cfg.EVAL_USE_CACHE,
-        #         use_cbgm=cfg.EVAL_USE_CBGM,
-        #     )
-
-        train_one_epoch(cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, use_wandb=opt.use_wandb)
+        train_one_epoch(opt,cfg, model,model_pix2pix, optimizer, train_loader, device, epoch, tfboard, use_wandb=opt.use_wandb)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -273,6 +262,82 @@ def train_gan(opt):
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
 
+def wandb_init(opt, cfg):
+    cfg_dict = {}
+    for k in dir(cfg):
+        if not k.startswith('__') and not callable(getattr(cfg, k)):
+            if isinstance(getattr(cfg, k), (int, float, str, bool, list, dict)):
+                cfg_dict[k] = getattr(cfg, k)
+            elif hasattr(getattr(cfg, k), '__iter__'):
+                # Handle nested configs by recursively adding their attributes
+                for sk in dir(getattr(cfg, k)):
+                    if not sk.startswith('__') and not callable(getattr(getattr(cfg, k), sk)):
+                        if isinstance(getattr(getattr(cfg, k), sk), (int, float, str, bool, list, dict)):
+                            cfg_dict[f"{k}.{sk}"] = getattr(getattr(cfg, k), sk)
+    
+    # Create a clean dict of all opt parameters for tracking
+    opt_dict = {k: v for k, v in vars(opt).items() 
+                if not k.startswith('__') and not callable(getattr(opt, k)) 
+                and isinstance(v, (int, float, str, bool, list, dict))}
+    
+    # Initialize wandb with combined configuration
+    run = wandb.init(
+        project=opt.wandb_project_name, 
+        name=opt.name, 
+        entity='bias-lab',  # Fixed missing comma here
+        config={
+            # Track all opt parameters directly at the top level
+            **opt_dict,  # This adds all opt parameters directly
+            
+            # High-level experiment settings
+            "experiment": {
+                "model_type": "combined",
+                "dataset": opt.dataset_mode,
+                "batch_size": opt.batch_size,
+            },
+            # SeqNet specific configs
+            "seqnet": {
+                "lr": cfg.SOLVER.BASE_LR,
+                "epochs": cfg.SOLVER.MAX_EPOCHS,
+                "optimizer": "SGD",
+                "momentum": cfg.SOLVER.SGD_MOMENTUM,
+                "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+                "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+                "milestones": cfg.SOLVER.LR_DECAY_MILESTONES,
+                # Add more important SeqNet hyperparameters
+            },
+            # GAN specific configs
+            "gan": {
+                "lr": opt.lr,
+                "beta1": opt.beta1,
+                "gan_mode": opt.gan_mode,
+                "n_epochs": opt.n_epochs,
+                "n_epochs_decay": opt.n_epochs_decay,
+                "lr_policy": opt.lr_policy,
+                # Add more important GAN hyperparameters
+            },
+            # Detailed configs (nested structures)
+            "seqnet_config": cfg_dict
+            # No need to repeat opt_dict since we included it at the top level
+        }
+    )
+    
+    # Log the full configurations as artifacts
+    # Save cfg as YAML for better readability
+    cfg_path = osp.join(opt.checkpoints_dir, opt.name, "seqnet_config.yaml")
+    with open(cfg_path, "w") as f:
+        f.write(cfg.dump())
+    wandb.save(cfg_path)
+    
+    # Save opt as JSON
+    opt_path = osp.join(opt.checkpoints_dir, opt.name, "gan_config.json")
+    with open(opt_path, "w") as f:
+        import json
+        json.dump(opt_dict, f, indent=2)
+    wandb.save(opt_path)
+    
+    return run
+
 def combined_train(opt):
     """Train SeqNet model"""
     cfg = get_default_cfg()
@@ -284,8 +349,11 @@ def combined_train(opt):
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 
-    print("Creating SeqNet model")
-    
+    # Initialize wandb with both SeqNet and GAN configs
+    if opt.use_wandb:
+        run = wandb_init(opt, cfg)
+        
+
     model_seqnet = SeqNet(cfg)
     model_seqnet.to(device)
         
@@ -294,20 +362,6 @@ def combined_train(opt):
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
     
-    if opt.use_wandb:
-        run = wandb.init(
-        project="seqnet",
-        name=opt.name,
-        config={
-            "lr": cfg.SOLVER.BASE_LR,
-            "epochs": cfg.SOLVER.MAX_EPOCHS,
-            "optimizer": "SGD",
-            "momentum": cfg.SOLVER.SGD_MOMENTUM,
-            "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
-            "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
-        }
-    )
-
 
 
     print("Loading data")
@@ -330,6 +384,10 @@ def combined_train(opt):
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=cfg.SOLVER.LR_DECAY_MILESTONES, gamma=0.1
     )
+    
+    if opt.resume_seqnet:
+        assert opt.ckpt, "--ckpt must be specified when --resume enabled"
+        start_epoch = resume_from_ckpt(opt.ckpt, model_seqnet) + 1
 
     start_epoch = 0
     
@@ -388,9 +446,9 @@ def combined_train(opt):
         tfboard.close()
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    print(f"Total training time {total_time_str}")
     if opt.use_wandb:
         run.finish()
-    print(f"Total training time {total_time_str}")
 
 
 if __name__ == '__main__':
@@ -405,10 +463,8 @@ if __name__ == '__main__':
     options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
     options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
     model_pix2pix = create_model(options)      # create a model given opt.model and other options
-    # model_pix2pix = create_model(options)      # create a model given opt.model and other options
 
     model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
-    model_pix2pix.eval()
     
     train_seqnet(options, model_pix2pix)
     

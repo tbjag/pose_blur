@@ -1,0 +1,12 @@
+OUTPUT_DIR: "./exp_cuhk_2"
+INPUT:
+  DATASET: "CUHK-SYSU"
+  DATA_ROOT: "/media/Data_2/person-search/dataset"
+SOLVER:
+  MAX_EPOCHS: 40
+  BASE_LR: 0.0006
+MODEL:
+  LOSS:
+    LUT_SIZE: 5532
+    CQ_SIZE: 5000
+DISP_PERIOD : 100
