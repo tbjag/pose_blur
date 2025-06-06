@@ -10,7 +10,6 @@ from PIL import Image
 from data.base_dataset import BaseDataset, get_params, get_transform, build_transforms
 from data.image_folder import make_dataset, make_bbox
 
-from data.bounding_box_check import process_image_tensor, process_single_image
 
 
 class CombinedCuhkDataset(BaseDataset):

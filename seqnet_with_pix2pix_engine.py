@@ -2,6 +2,7 @@ import os.path as osp
 from re import S
 import torch
 
+
 import math
 import sys
 from copy import deepcopy
@@ -50,7 +51,7 @@ def eval_detection(
     """
     assert len(gallery_dataset) == len(gallery_dets)
     annos = gallery_dataset.annotations
-
+    
     y_true, y_score = [], []
     count_gt, count_tp = 0, 0
     for anno, det in zip(annos, gallery_dets):
@@ -677,6 +678,7 @@ def evaluate_performance(
                         "scores": torch.ones(n_boxes).to(device),
                     }
                 ]
+            
 
             for output in outputs:
                 box_w_scores = torch.cat([output["boxes"], output["scores"].unsqueeze(1)], dim=1)

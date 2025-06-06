@@ -18,68 +18,86 @@ from SeqNet.utils.utils import mkdir, resume_from_ckpt, save_on_master, set_rand
 from SeqNet.models.seqnet import SeqNet
 
 # Import from GAN
-from data import create_dataset
+from data import create_dataset, create_small_table, print_statistics
 from models import create_model
 from util.visualizer import Visualizer
 from options.train_options import TrainOptions
 from options.test_options import TestOptions
 
-def create_small_table(small_dict):
-    """
-    Create a small table using the keys of small_dict as headers. This is only
-    suitable for small dictionaries.
 
-    Args:
-        small_dict (dict): a result dictionary of only a few items.
-
-    Returns:
-        str: the table as a string.
-    """
-    keys, values = tuple(zip(*small_dict.items()))
-    table = tabulate(
-        [values],
-        headers=keys,
-        tablefmt="pipe",
-        floatfmt=".3f",
-        stralign="center",
-        numalign="center",
+def wandb_init(opt, cfg):
+    cfg_dict = {}
+    for k in dir(cfg):
+        if not k.startswith('__') and not callable(getattr(cfg, k)):
+            if isinstance(getattr(cfg, k), (int, float, str, bool, list, dict)):
+                cfg_dict[k] = getattr(cfg, k)
+            elif hasattr(getattr(cfg, k), '__iter__'):
+                # Handle nested configs by recursively adding their attributes
+                for sk in dir(getattr(cfg, k)):
+                    if not sk.startswith('__') and not callable(getattr(getattr(cfg, k), sk)):
+                        if isinstance(getattr(getattr(cfg, k), sk), (int, float, str, bool, list, dict)):
+                            cfg_dict[f"{k}.{sk}"] = getattr(getattr(cfg, k), sk)
+    
+    # Create a clean dict of all opt parameters for tracking
+    opt_dict = {k: v for k, v in vars(opt).items() 
+                if not k.startswith('__') and not callable(getattr(opt, k)) 
+                and isinstance(v, (int, float, str, bool, list, dict))}
+    
+    # Initialize wandb with combined configuration
+    run = wandb.init(
+        project=opt.wandb_project_name, 
+        name=opt.name, 
+        entity='bias-lab',  # Fixed missing comma here
+        config={
+            # Track all opt parameters directly at the top level
+            **opt_dict,  # This adds all opt parameters directly
+            
+            # High-level experiment settings
+            "experiment": {
+                "model_type": "combined",
+                "dataset": opt.dataset_mode,
+                "batch_size": opt.batch_size,
+            },
+            # SeqNet specific configs
+            "seqnet": {
+                "lr": cfg.SOLVER.BASE_LR,
+                "epochs": cfg.SOLVER.MAX_EPOCHS,
+                "optimizer": "SGD",
+                "momentum": cfg.SOLVER.SGD_MOMENTUM,
+                "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
+                "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
+                "milestones": cfg.SOLVER.LR_DECAY_MILESTONES,
+                # Add more important SeqNet hyperparameters
+            },
+            # GAN specific configs
+            "gan": {
+                "lr": opt.lr,
+                "beta1": opt.beta1,
+                "gan_mode": opt.gan_mode,
+                "n_epochs": opt.n_epochs,
+                "n_epochs_decay": opt.n_epochs_decay,
+                "lr_policy": opt.lr_policy,
+                # Add more important GAN hyperparameters
+            },
+            # Detailed configs (nested structures)
+            "seqnet_config": cfg_dict
+            # No need to repeat opt_dict since we included it at the top level
+        }
     )
-    return table
-
-def print_statistics(dataset):
-    """
-    Print dataset statistics.
-    """
-    num_imgs = len(dataset.annotations)
-    num_boxes = 0
-    pid_set = set()
-    for i in range(len(dataset.annotations)):
-        anno = dataset.annotations[i]
-        num_boxes += anno["boxes"].shape[0]
-        for pid in anno["pids"]:
-            pid_set.add(pid)
-    statistics = {
-        "dataset": "CUHK",
-        "split": dataset.split,
-        "num_images": num_imgs,
-        "num_boxes": num_boxes,
-    }
-    if dataset.split != "query":
-        pid_list = sorted(list(pid_set))
-        unlabeled_pid = pid_list[-1]
-        pid_list = pid_list[:-1]  # remove unlabeled pid
-        num_pids, min_pid, max_pid = len(pid_list), min(pid_list), max(pid_list)
-        statistics.update(
-            {
-                "num_labeled_pids": num_pids,
-                "min_labeled_pid": int(min_pid),
-                "max_labeled_pid": int(max_pid),
-                "unlabeled_pid": int(unlabeled_pid),
-            }
-        )
-
-    print(f"=> CUHK-{dataset.split} loaded:\n" + create_small_table(statistics))
-
+    
+    cfg_path = osp.join(opt.checkpoints_dir, opt.name, "seqnet_config.yaml")
+    with open(cfg_path, "w") as f:
+        f.write(cfg.dump())
+    wandb.save(cfg_path)
+    
+    # Save opt as JSON
+    opt_path = osp.join(opt.checkpoints_dir, opt.name, "gan_config.json")
+    with open(opt_path, "w") as f:
+        import json
+        json.dump(opt_dict, f, indent=2)
+    wandb.save(opt_path)
+    
+    return run
 
 
 def train_seqnet(opt, model_pix2pix):
@@ -262,81 +280,6 @@ def train_gan(opt):
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
 
-def wandb_init(opt, cfg):
-    cfg_dict = {}
-    for k in dir(cfg):
-        if not k.startswith('__') and not callable(getattr(cfg, k)):
-            if isinstance(getattr(cfg, k), (int, float, str, bool, list, dict)):
-                cfg_dict[k] = getattr(cfg, k)
-            elif hasattr(getattr(cfg, k), '__iter__'):
-                # Handle nested configs by recursively adding their attributes
-                for sk in dir(getattr(cfg, k)):
-                    if not sk.startswith('__') and not callable(getattr(getattr(cfg, k), sk)):
-                        if isinstance(getattr(getattr(cfg, k), sk), (int, float, str, bool, list, dict)):
-                            cfg_dict[f"{k}.{sk}"] = getattr(getattr(cfg, k), sk)
-    
-    # Create a clean dict of all opt parameters for tracking
-    opt_dict = {k: v for k, v in vars(opt).items() 
-                if not k.startswith('__') and not callable(getattr(opt, k)) 
-                and isinstance(v, (int, float, str, bool, list, dict))}
-    
-    # Initialize wandb with combined configuration
-    run = wandb.init(
-        project=opt.wandb_project_name, 
-        name=opt.name, 
-        entity='bias-lab',  # Fixed missing comma here
-        config={
-            # Track all opt parameters directly at the top level
-            **opt_dict,  # This adds all opt parameters directly
-            
-            # High-level experiment settings
-            "experiment": {
-                "model_type": "combined",
-                "dataset": opt.dataset_mode,
-                "batch_size": opt.batch_size,
-            },
-            # SeqNet specific configs
-            "seqnet": {
-                "lr": cfg.SOLVER.BASE_LR,
-                "epochs": cfg.SOLVER.MAX_EPOCHS,
-                "optimizer": "SGD",
-                "momentum": cfg.SOLVER.SGD_MOMENTUM,
-                "weight_decay": cfg.SOLVER.WEIGHT_DECAY,
-                "clip_grad": cfg.SOLVER.CLIP_GRADIENTS,
-                "milestones": cfg.SOLVER.LR_DECAY_MILESTONES,
-                # Add more important SeqNet hyperparameters
-            },
-            # GAN specific configs
-            "gan": {
-                "lr": opt.lr,
-                "beta1": opt.beta1,
-                "gan_mode": opt.gan_mode,
-                "n_epochs": opt.n_epochs,
-                "n_epochs_decay": opt.n_epochs_decay,
-                "lr_policy": opt.lr_policy,
-                # Add more important GAN hyperparameters
-            },
-            # Detailed configs (nested structures)
-            "seqnet_config": cfg_dict
-            # No need to repeat opt_dict since we included it at the top level
-        }
-    )
-    
-    # Log the full configurations as artifacts
-    # Save cfg as YAML for better readability
-    cfg_path = osp.join(opt.checkpoints_dir, opt.name, "seqnet_config.yaml")
-    with open(cfg_path, "w") as f:
-        f.write(cfg.dump())
-    wandb.save(cfg_path)
-    
-    # Save opt as JSON
-    opt_path = osp.join(opt.checkpoints_dir, opt.name, "gan_config.json")
-    with open(opt_path, "w") as f:
-        import json
-        json.dump(opt_dict, f, indent=2)
-    wandb.save(opt_path)
-    
-    return run
 
 def combined_train(opt):
     """Train SeqNet model"""
@@ -391,7 +334,7 @@ def combined_train(opt):
 
     start_epoch = 0
     
-    print("Creating output folder")
+    ##Creating output folder
     output_dir = cfg.OUTPUT_DIR
     mkdir(output_dir)
     path = osp.join(output_dir, "config.yaml")
@@ -399,6 +342,8 @@ def combined_train(opt):
         f.write(cfg.dump())
     print(f"Full config is saved to {path}")
     
+
+    ## Creating Tensor flow board
     tfboard = None
     if cfg.TF_BOARD:
         from torch.utils.tensorboard import SummaryWriter
@@ -407,6 +352,7 @@ def combined_train(opt):
         tfboard = SummaryWriter(log_dir=tf_log_path)
         print(f"TensorBoard files are saved to {tf_log_path}")
 
+    ## Starting training
     print("Start training SeqNet")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
@@ -444,6 +390,7 @@ def combined_train(opt):
 
     if tfboard:
         tfboard.close()
+    
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Total training time {total_time_str}")
@@ -452,24 +399,27 @@ def combined_train(opt):
 
 
 if __name__ == '__main__':
-    
-    # options = TrainOptions().parse()
-    # train_gan(options)
-    
-    options = TestOptions().parse()
-    options.num_threads = 0   # test code only supports num_threads = 0
-    options.batch_size = 1    # test code only supports batch_size = 1
-    options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
-    options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
-    model_pix2pix = create_model(options)      # create a model given opt.model and other options
+    options = TrainOptions().parse()
 
-    model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+    if options.stage == "stage_1":
     
-    train_seqnet(options, model_pix2pix)
+        train_gan(options)
+        
+    elif options.stage == "stage_2":
+        options.isTrain = False
+        options.num_threads = 0   # test code only supports num_threads = 0
+        options.batch_size = 1    # test code only supports batch_size = 1
+        options.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
+        options.no_flip = True    # no flip; comment this line if results on flipped images are needed.
+        options.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
+        model_pix2pix = create_model(options)      # create a model given opt.model and other options
+
+        model_pix2pix.setup(options)               # regular setup: load and print networks; create schedulers
+        
+        train_seqnet(options, model_pix2pix)
     
-    # options = TrainOptions().parse()
-    # combined_train(options)
+    elif options.stage == "stage_3":
+        combined_train(options)
 
     
     
